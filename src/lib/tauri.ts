@@ -15,6 +15,11 @@ export interface ManagedSkill {
   description: string | null;
   source_type: string;
   source_ref: string | null;
+  source_revision: string | null;
+  remote_revision: string | null;
+  update_status: string;
+  last_checked_at: number | null;
+  last_check_error: string | null;
   central_path: string;
   enabled: boolean;
   created_at: number;
@@ -101,6 +106,23 @@ export const installGit = (repoUrl: string, name?: string) =>
 
 export const installFromSkillssh = (source: string, skillId: string) =>
   invoke<void>("install_from_skillssh", { source, skillId });
+
+export const checkSkillUpdate = (skillId: string, force?: boolean) =>
+  invoke<ManagedSkill>("check_skill_update", {
+    skillId,
+    force: force ?? false,
+  });
+
+export const checkAllSkillUpdates = (force?: boolean) =>
+  invoke<ManagedSkill[]>("check_all_skill_updates", {
+    force: force ?? false,
+  });
+
+export const updateSkill = (skillId: string) =>
+  invoke<ManagedSkill>("update_skill", { skillId });
+
+export const reimportLocalSkill = (skillId: string) =>
+  invoke<ManagedSkill>("reimport_local_skill", { skillId });
 
 // ── Sync ──
 

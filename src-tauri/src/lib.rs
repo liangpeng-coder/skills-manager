@@ -13,6 +13,7 @@ pub fn run() {
     let store = Arc::new(
         core::skill_store::SkillStore::new(&db_path).expect("Failed to initialize database"),
     );
+    initialize_startup_scenario(&store).expect("Failed to initialize startup scenario");
 
     tauri::Builder::default()
         .manage(store)
@@ -40,6 +41,10 @@ pub fn run() {
             commands::skills::install_local,
             commands::skills::install_git,
             commands::skills::install_from_skillssh,
+            commands::skills::check_skill_update,
+            commands::skills::check_all_skill_updates,
+            commands::skills::update_skill,
+            commands::skills::reimport_local_skill,
             // Sync
             commands::sync::sync_skill_to_tool,
             commands::sync::unsync_skill_from_tool,
@@ -67,4 +72,36 @@ pub fn run() {
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
+}
+
+fn initialize_startup_scenario(store: &Arc<core::skill_store::SkillStore>) -> Result<(), String> {
+    let scenarios = store.get_all_scenarios().map_err(|e| e.to_string())?;
+    if scenarios.is_empty() {
+        return Ok(());
+    }
+
+    let current_active = store.get_active_scenario_id().map_err(|e| e.to_string())?;
+    let preferred_default = store.get_setting("default_scenario").ok().flatten();
+
+    let desired_active = preferred_default
+        .filter(|id| scenarios.iter().any(|scenario| scenario.id == *id))
+        .or_else(|| {
+            current_active
+                .clone()
+                .filter(|id| scenarios.iter().any(|scenario| scenario.id == *id))
+        })
+        .unwrap_or_else(|| scenarios[0].id.clone());
+
+    if current_active.as_deref() != Some(desired_active.as_str()) {
+        if let Some(old_active) = current_active.as_deref() {
+            commands::scenarios::unsync_scenario_skills(store, old_active)?;
+        }
+
+        store
+            .set_active_scenario(&desired_active)
+            .map_err(|e| e.to_string())?;
+    }
+
+    commands::scenarios::sync_scenario_skills(store, &desired_active)?;
+    Ok(())
 }

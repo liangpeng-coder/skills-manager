@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import {
   DownloadCloud,
   UploadCloud,
@@ -12,9 +12,10 @@ import {
   Loader2,
   RefreshCw,
   FolderSearch,
-  ChevronDown,
-  ChevronRight,
   ExternalLink,
+  Check,
+  ChevronLeft,
+  ChevronRight,
 } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
@@ -26,6 +27,8 @@ import { open } from "@tauri-apps/plugin-dialog";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { useSearchParams } from "react-router-dom";
 
+const MARKET_PAGE_SIZE = 24;
+
 export function InstallSkills() {
   const { t } = useTranslation();
   const { refreshScenarios, refreshManagedSkills } = useApp();
@@ -33,6 +36,7 @@ export function InstallSkills() {
   const [activeTab, setActiveTab] = useState<"market" | "local" | "git">("market");
   const [marketTab, setMarketTab] = useState<"hot" | "trending" | "alltime">("hot");
   const [marketSkills, setMarketSkills] = useState<SkillsShSkill[]>([]);
+  const [marketPage, setMarketPage] = useState(1);
   const [marketLoading, setMarketLoading] = useState(false);
   const [installing, setInstalling] = useState<string | null>(null);
   const [gitUrl, setGitUrl] = useState("");
@@ -42,7 +46,7 @@ export function InstallSkills() {
   const [scanLoading, setScanLoading] = useState(false);
   const [importingPaths, setImportingPaths] = useState<Set<string>>(new Set());
   const [importingAll, setImportingAll] = useState(false);
-  const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
+  const marketListRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     const tab = searchParams.get("tab");
@@ -72,6 +76,7 @@ export function InstallSkills() {
   useEffect(() => {
     if (activeTab === "market") {
       setMarketLoading(true);
+      setMarketPage(1);
       api
         .fetchLeaderboard(marketTab)
         .then(setMarketSkills)
@@ -135,15 +140,6 @@ export function InstallSkills() {
     }
   };
 
-  const toggleGroup = (name: string) => {
-    setExpandedGroups((prev) => {
-      const next = new Set(prev);
-      if (next.has(name)) next.delete(name);
-      else next.add(name);
-      return next;
-    });
-  };
-
   const handleImportDiscovered = async (sourcePath: string, name: string) => {
     setImportingPaths((prev) => new Set(prev).add(sourcePath));
     try {
@@ -175,6 +171,34 @@ export function InstallSkills() {
       setImportingAll(false);
     }
   };
+
+  const scrollMarketListToTop = () => {
+    marketListRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+  };
+
+  const changeMarketPage = (page: number) => {
+    setMarketPage(page);
+    scrollMarketListToTop();
+  };
+
+  const scanGroups = scanResult?.groups ?? [];
+  const pendingGroups = scanGroups.filter((group) => !group.imported);
+  const importedGroups = scanGroups.length - pendingGroups.length;
+  const totalMarketPages = Math.max(1, Math.ceil(marketSkills.length / MARKET_PAGE_SIZE));
+  const currentMarketPage = Math.min(marketPage, totalMarketPages);
+  const marketPageStart = (currentMarketPage - 1) * MARKET_PAGE_SIZE;
+  const paginatedMarketSkills = marketSkills.slice(
+    marketPageStart,
+    marketPageStart + MARKET_PAGE_SIZE
+  );
+  const visibleMarketPages = Array.from(
+    { length: totalMarketPages },
+    (_, index) => index + 1
+  ).filter((page) => {
+    if (totalMarketPages <= 7) return true;
+    if (page === 1 || page === totalMarketPages) return true;
+    return Math.abs(page - currentMarketPage) <= 1;
+  });
 
   return (
     <div className="max-w-[1200px] mx-auto h-full flex flex-col animate-in fade-in duration-400">
@@ -242,49 +266,116 @@ export function InstallSkills() {
               <Loader2 className="w-5 h-5 text-muted animate-spin" />
             </div>
           ) : (
-            <div className="grid grid-cols-2 gap-2.5 pb-8 lg:grid-cols-3">
-              {marketSkills.map((skill) => (
-                <div
-                  key={skill.id}
-                  className="bg-surface border border-border-subtle rounded-lg p-3.5 hover:border-border transition-colors flex items-center gap-3"
-                >
-                  <div className="min-w-0 flex-1">
-                    <h3 className="font-semibold text-secondary text-[13px] truncate">{skill.name || skill.skill_id}</h3>
-                    <div className="flex items-center gap-2 mt-1">
-                      <span className="text-[10px] text-accent-light font-medium bg-accent-bg px-1.5 py-0.5 rounded">
-                        @{skill.source}
-                      </span>
-                      <span className="text-[10px] text-muted flex items-center gap-1">
-                        <DownloadCloud className="w-3 h-3" />
-                        {skill.installs > 1000
-                          ? `${(skill.installs / 1000).toFixed(0)}k`
-                          : skill.installs}
-                      </span>
+            <div className="pb-8">
+              <div
+                ref={marketListRef}
+                className="mb-4 flex scroll-mt-4 flex-col gap-3 rounded-lg border border-border-subtle bg-surface px-4 py-3 sm:flex-row sm:items-center sm:justify-between"
+              >
+                <p className="text-[11px] text-muted">
+                  {t("install.pagination.summary", {
+                    start: marketSkills.length === 0 ? 0 : marketPageStart + 1,
+                    end: Math.min(marketPageStart + MARKET_PAGE_SIZE, marketSkills.length),
+                    total: marketSkills.length,
+                  })}
+                </p>
+                <div className="text-[11px] text-faint">
+                  {t("install.pagination.page", {
+                    current: currentMarketPage,
+                    total: totalMarketPages,
+                  })}
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-2.5 lg:grid-cols-3">
+                {paginatedMarketSkills.map((skill) => (
+                  <div
+                    key={skill.id}
+                    className="bg-surface border border-border-subtle rounded-lg p-3.5 hover:border-border transition-colors flex items-center gap-3"
+                  >
+                    <div className="min-w-0 flex-1">
+                      <h3 className="font-semibold text-secondary text-[13px] truncate">{skill.name || skill.skill_id}</h3>
+                      <div className="flex items-center gap-2 mt-1">
+                        <span className="text-[10px] text-accent-light font-medium bg-accent-bg px-1.5 py-0.5 rounded">
+                          @{skill.source}
+                        </span>
+                        <span className="text-[10px] text-muted flex items-center gap-1">
+                          <DownloadCloud className="w-3 h-3" />
+                          {skill.installs > 1000
+                            ? `${(skill.installs / 1000).toFixed(0)}k`
+                            : skill.installs}
+                        </span>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-1.5 shrink-0">
+                      <button
+                        onClick={() => openUrl(`https://skills.sh/${skill.source}/${skill.skill_id}`)}
+                        className="p-1.5 rounded-[4px] text-muted hover:text-secondary hover:bg-surface-hover transition-colors"
+                        title={t("install.viewOnWeb")}
+                      >
+                        <ExternalLink className="w-3.5 h-3.5" />
+                      </button>
+                      <button
+                        onClick={() => handleInstallSkillssh(skill)}
+                        disabled={installing === skill.id}
+                        className="p-1.5 rounded-[4px] bg-accent-dark hover:bg-accent text-white transition-colors disabled:opacity-50 border border-accent-border"
+                        title={t("install.oneClickInstall")}
+                      >
+                        {installing === skill.id ? (
+                          <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                        ) : (
+                          <Plus className="w-3.5 h-3.5" />
+                        )}
+                      </button>
                     </div>
                   </div>
-                  <div className="flex items-center gap-1.5 shrink-0">
-                    <button
-                      onClick={() => openUrl(`https://skills.sh/${skill.source}/${skill.skill_id}`)}
-                      className="p-1.5 rounded-[4px] text-muted hover:text-secondary hover:bg-surface-hover transition-colors"
-                      title={t("install.viewOnWeb")}
-                    >
-                      <ExternalLink className="w-3.5 h-3.5" />
-                    </button>
-                    <button
-                      onClick={() => handleInstallSkillssh(skill)}
-                      disabled={installing === skill.id}
-                      className="p-1.5 rounded-[4px] bg-accent-dark hover:bg-accent text-white transition-colors disabled:opacity-50 border border-accent-border"
-                      title={t("install.oneClickInstall")}
-                    >
-                      {installing === skill.id ? (
-                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                      ) : (
-                        <Plus className="w-3.5 h-3.5" />
-                      )}
-                    </button>
-                  </div>
+                ))}
+              </div>
+
+              {totalMarketPages > 1 && (
+                <div className="mt-5 flex flex-wrap items-center justify-center gap-1.5">
+                  <button
+                    onClick={() => changeMarketPage(Math.max(1, currentMarketPage - 1))}
+                    disabled={currentMarketPage === 1}
+                    className="inline-flex items-center gap-1 rounded-[6px] border border-border-subtle bg-surface px-3 py-1.5 text-[11px] font-medium text-secondary transition-colors hover:bg-surface-hover disabled:opacity-50"
+                  >
+                    <ChevronLeft className="h-3.5 w-3.5" />
+                    {t("install.pagination.previous")}
+                  </button>
+
+                  {visibleMarketPages.map((page, index) => {
+                    const previousPage = visibleMarketPages[index - 1];
+                    const showGap = previousPage && page - previousPage > 1;
+
+                    return (
+                      <div key={page} className="flex items-center gap-1.5">
+                        {showGap && (
+                          <span className="px-1 text-[11px] text-faint">...</span>
+                        )}
+                        <button
+                          onClick={() => changeMarketPage(page)}
+                          className={cn(
+                            "min-w-8 rounded-[6px] border px-2.5 py-1.5 text-[11px] font-semibold transition-colors",
+                            page === currentMarketPage
+                              ? "border-accent-border bg-accent-dark text-white"
+                              : "border-border-subtle bg-surface text-secondary hover:bg-surface-hover"
+                          )}
+                        >
+                          {page}
+                        </button>
+                      </div>
+                    );
+                  })}
+
+                  <button
+                    onClick={() => changeMarketPage(Math.min(totalMarketPages, currentMarketPage + 1))}
+                    disabled={currentMarketPage === totalMarketPages}
+                    className="inline-flex items-center gap-1 rounded-[6px] border border-border-subtle bg-surface px-3 py-1.5 text-[11px] font-medium text-secondary transition-colors hover:bg-surface-hover disabled:opacity-50"
+                  >
+                    {t("install.pagination.next")}
+                    <ChevronRight className="h-3.5 w-3.5" />
+                  </button>
                 </div>
-              ))}
+              )}
             </div>
           )}
         </div>
@@ -345,13 +436,34 @@ export function InstallSkills() {
               </div>
             </div>
 
-            <div className="p-4">
+            <div className="p-4 space-y-4">
+              <div className="grid gap-2 md:grid-cols-3">
+                <div className="rounded-lg border border-border-subtle bg-bg-secondary px-3.5 py-3">
+                  <p className="text-[10px] font-semibold uppercase tracking-[0.08em] text-muted">
+                    {t("install.scan.stats.detected")}
+                  </p>
+                  <p className="mt-1 text-[20px] font-semibold text-primary">{scanGroups.length}</p>
+                </div>
+                <div className="rounded-lg border border-border-subtle bg-bg-secondary px-3.5 py-3">
+                  <p className="text-[10px] font-semibold uppercase tracking-[0.08em] text-muted">
+                    {t("install.scan.stats.pending")}
+                  </p>
+                  <p className="mt-1 text-[20px] font-semibold text-primary">{pendingGroups.length}</p>
+                </div>
+                <div className="rounded-lg border border-border-subtle bg-bg-secondary px-3.5 py-3">
+                  <p className="text-[10px] font-semibold uppercase tracking-[0.08em] text-muted">
+                    {t("install.scan.stats.imported")}
+                  </p>
+                  <p className="mt-1 text-[20px] font-semibold text-primary">{importedGroups}</p>
+                </div>
+              </div>
+
               {scanLoading ? (
                 <div className="py-12 flex items-center justify-center gap-2.5 text-muted">
                   <Loader2 className="w-4 h-4 animate-spin" />
                   <span className="text-[12px]">{t("install.scan.scanning")}</span>
                 </div>
-              ) : scanResult && scanResult.groups.length === 0 ? (
+              ) : scanResult && scanGroups.length === 0 ? (
                 <div className="py-12 flex flex-col items-center justify-center text-center">
                   <div className="w-10 h-10 rounded-lg bg-surface-hover border border-border flex items-center justify-center mb-3">
                     <FolderSearch className="w-5 h-5 text-muted" />
@@ -362,85 +474,87 @@ export function InstallSkills() {
                   <p className="text-[11px] text-muted">{t("install.scan.noResultsHint")}</p>
                 </div>
               ) : (
-                <div className="space-y-2">
-                  {scanResult?.groups.map((group) => {
-                    const isExpanded = expandedGroups.has(group.name);
-                    return (
-                      <article
-                        key={group.name}
-                        className="bg-bg-secondary border border-border-subtle rounded-lg overflow-hidden"
-                      >
-                        <button
-                          type="button"
-                          onClick={() => toggleGroup(group.name)}
-                          className="w-full px-3.5 py-3 flex items-center justify-between hover:bg-surface-hover transition-colors"
-                        >
-                          <div className="flex items-center gap-3">
-                            <div className="w-7 h-7 rounded-md bg-surface-hover border border-border flex items-center justify-center text-muted">
-                              {isExpanded ? (
-                                <ChevronDown className="w-3.5 h-3.5" />
+                <>
+                  <div className="rounded-xl border border-border-subtle bg-bg-secondary/70 px-3.5 py-2.5">
+                    <p className="text-[11px] text-muted">
+                      {pendingGroups.length > 0
+                        ? t("install.scan.listHint")
+                        : t("install.scan.listImportedHint")}
+                    </p>
+                  </div>
+                  <div className="overflow-hidden rounded-lg border border-border-subtle bg-bg-secondary">
+                    {scanGroups.map((group) => {
+                      const [primaryLocation, ...otherLocations] = group.locations;
+                      const primaryPath = primaryLocation?.found_path;
+                      const isImporting = !!primaryPath && importingPaths.has(primaryPath);
+
+                      return (
+                        <article key={group.name} className="border-b border-border-subtle last:border-b-0">
+                          <div className="grid grid-cols-[minmax(0,1fr)_auto] gap-x-3 gap-y-1.5 px-3 py-2 lg:grid-cols-[180px_minmax(0,1fr)_auto] lg:items-center">
+                            <div className="flex min-w-0 items-center gap-2">
+                              <h3 className="truncate text-[13px] font-semibold text-secondary">
+                                {group.name}
+                              </h3>
+                              <span className="shrink-0 rounded-full border border-border-subtle bg-surface px-2 py-0.5 text-[10px] text-muted">
+                                {t("install.scan.locations", { count: group.locations.length })}
+                              </span>
+                            </div>
+
+                            <div className="row-span-2 flex shrink-0 items-start justify-end lg:row-span-1 lg:items-center">
+                              {group.imported ? (
+                                <span className="inline-flex items-center gap-1 rounded-[6px] border border-emerald-500/20 bg-emerald-500/10 px-2 py-1 text-[10px] font-semibold text-emerald-400">
+                                  <Check className="h-3 w-3" />
+                                  {t("install.scan.imported")}
+                                </span>
                               ) : (
-                                <ChevronRight className="w-3.5 h-3.5" />
+                                <button
+                                  onClick={() => primaryPath && handleImportDiscovered(primaryPath, group.name)}
+                                  disabled={!primaryPath || isImporting}
+                                  className="inline-flex items-center justify-center gap-1.5 rounded-[6px] border border-accent-border bg-accent-dark px-2.5 py-1.5 text-[10px] font-medium text-white transition-colors hover:bg-accent disabled:opacity-50"
+                                >
+                                  {isImporting ? (
+                                    <Loader2 className="h-3 w-3 animate-spin" />
+                                  ) : (
+                                    <DownloadCloud className="h-3 w-3" />
+                                  )}
+                                  {t("install.scan.importOne")}
+                                </button>
                               )}
                             </div>
-                            <div className="text-left">
-                              <div className="flex items-center gap-2">
-                                <h3 className="text-[12px] font-semibold text-secondary">{group.name}</h3>
-                                {group.imported && (
-                                  <span className="px-1.5 py-px rounded text-[9px] font-medium bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
-                                    {t("install.scan.imported")}
-                                  </span>
-                                )}
+
+                            {primaryLocation && (
+                              <div className="col-span-2 min-w-0 flex items-center gap-2 lg:col-span-1">
+                                <span className="inline-flex shrink-0 rounded-[4px] border border-border-subtle bg-surface px-1.5 py-px text-[10px] font-medium text-tertiary">
+                                  {primaryLocation.tool}
+                                </span>
+                                <code className="block min-w-0 truncate text-[11px] text-tertiary">
+                                  {primaryLocation.found_path}
+                                </code>
                               </div>
-                              <p className="text-[10px] text-faint mt-px">
-                                {t("install.scan.locations", { count: group.locations.length })}
-                              </p>
+                            )}
+                          </div>
+
+                          {otherLocations.length > 0 && (
+                            <div className="border-t border-border-subtle bg-surface/40 px-3 py-1.5">
+                              <div className="space-y-1">
+                                {otherLocations.map((location) => (
+                                  <div key={location.id} className="flex min-w-0 items-center gap-2">
+                                    <span className="inline-flex shrink-0 rounded-[4px] border border-border-subtle bg-surface px-1.5 py-px text-[10px] font-medium text-tertiary">
+                                      {location.tool}
+                                    </span>
+                                    <code className="block min-w-0 truncate text-[11px] text-muted">
+                                      {location.found_path}
+                                    </code>
+                                  </div>
+                                ))}
+                              </div>
                             </div>
-                          </div>
-                        </button>
-
-                        {isExpanded && (
-                          <div className="px-3.5 pb-3.5 space-y-2 border-t border-border-subtle">
-                            {group.locations.map((location) => (
-                              <div
-                                key={location.id}
-                                className="mt-3 p-3 rounded-lg bg-surface border border-border-subtle flex flex-col gap-3 lg:flex-row lg:items-center"
-                              >
-                                <div className="min-w-0 flex-1">
-                                  <span className="inline-flex px-1.5 py-px rounded text-[10px] font-medium bg-surface-hover text-tertiary border border-border-subtle mb-1.5">
-                                    {location.tool}
-                                  </span>
-                                  <code className="block text-[11px] leading-5 break-all bg-background border border-border-subtle rounded-[4px] px-2.5 py-1.5 text-tertiary font-mono">
-                                    {location.found_path}
-                                  </code>
-                                </div>
-
-                                {group.imported ? (
-                                  <span className="px-2.5 py-1.5 rounded-[4px] text-[10px] font-semibold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 shrink-0">
-                                    {t("install.scan.imported")}
-                                  </span>
-                                ) : (
-                                  <button
-                                    onClick={() => handleImportDiscovered(location.found_path, group.name)}
-                                    disabled={importingPaths.has(location.found_path)}
-                                    className="shrink-0 flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-[4px] bg-accent-dark hover:bg-accent border border-accent-border text-white text-[11px] font-medium transition-colors disabled:opacity-50"
-                                  >
-                                    {importingPaths.has(location.found_path) ? (
-                                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                                    ) : (
-                                      <DownloadCloud className="w-3.5 h-3.5" />
-                                    )}
-                                    {t("install.scan.importOne")}
-                                  </button>
-                                )}
-                              </div>
-                            ))}
-                          </div>
-                        )}
-                      </article>
-                    );
-                  })}
-                </div>
+                          )}
+                        </article>
+                      );
+                    })}
+                  </div>
+                </>
               )}
             </div>
           </section>

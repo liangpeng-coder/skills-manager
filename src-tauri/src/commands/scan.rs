@@ -53,13 +53,20 @@ pub fn import_existing_skill(
         description: result.description,
         source_type: "import".to_string(),
         source_ref: Some(source_path),
+        source_ref_resolved: None,
+        source_subpath: None,
+        source_branch: None,
         source_revision: None,
+        remote_revision: None,
         central_path: result.central_path.to_string_lossy().to_string(),
         content_hash: Some(result.content_hash),
         enabled: true,
         created_at: now,
         updated_at: now,
         status: "ok".to_string(),
+        update_status: "local_only".to_string(),
+        last_checked_at: Some(now),
+        last_check_error: None,
     };
 
     store.insert_skill(&record).map_err(|e| e.to_string())?;
@@ -96,13 +103,20 @@ pub fn import_all_discovered(store: State<'_, Arc<SkillStore>>) -> Result<(), St
                     description: result.description,
                     source_type: "import".to_string(),
                     source_ref: Some(first.found_path.clone()),
+                    source_ref_resolved: None,
+                    source_subpath: None,
+                    source_branch: None,
                     source_revision: None,
+                    remote_revision: None,
                     central_path: result.central_path.to_string_lossy().to_string(),
                     content_hash: Some(result.content_hash),
                     enabled: true,
                     created_at: now,
                     updated_at: now,
                     status: "ok".to_string(),
+                    update_status: "local_only".to_string(),
+                    last_checked_at: Some(now),
+                    last_check_error: None,
                 };
                 store.insert_skill(&record).ok();
 

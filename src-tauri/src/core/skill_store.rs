@@ -15,13 +15,20 @@ pub struct SkillRecord {
     pub description: Option<String>,
     pub source_type: String,
     pub source_ref: Option<String>,
+    pub source_ref_resolved: Option<String>,
+    pub source_subpath: Option<String>,
+    pub source_branch: Option<String>,
     pub source_revision: Option<String>,
+    pub remote_revision: Option<String>,
     pub central_path: String,
     pub content_hash: Option<String>,
     pub enabled: bool,
     pub created_at: i64,
     pub updated_at: i64,
     pub status: String,
+    pub update_status: String,
+    pub last_checked_at: Option<i64>,
+    pub last_check_error: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -71,13 +78,20 @@ impl SkillStore {
                 description TEXT,
                 source_type TEXT NOT NULL,
                 source_ref TEXT,
+                source_ref_resolved TEXT,
+                source_subpath TEXT,
+                source_branch TEXT,
                 source_revision TEXT,
+                remote_revision TEXT,
                 central_path TEXT NOT NULL UNIQUE,
                 content_hash TEXT,
                 enabled INTEGER DEFAULT 1,
                 created_at INTEGER,
                 updated_at INTEGER,
-                status TEXT DEFAULT 'ok'
+                status TEXT DEFAULT 'ok',
+                update_status TEXT DEFAULT 'unknown',
+                last_checked_at INTEGER,
+                last_check_error TEXT
             );
             CREATE INDEX IF NOT EXISTS idx_skills_name ON skills(name);
 
@@ -149,6 +163,19 @@ impl SkillStore {
             conn.execute("ALTER TABLE scenarios ADD COLUMN icon TEXT", [])?;
         }
 
+        add_column_if_missing(&conn, "skills", "source_ref_resolved", "TEXT")?;
+        add_column_if_missing(&conn, "skills", "source_subpath", "TEXT")?;
+        add_column_if_missing(&conn, "skills", "source_branch", "TEXT")?;
+        add_column_if_missing(&conn, "skills", "remote_revision", "TEXT")?;
+        add_column_if_missing(
+            &conn,
+            "skills",
+            "update_status",
+            "TEXT DEFAULT 'unknown'",
+        )?;
+        add_column_if_missing(&conn, "skills", "last_checked_at", "INTEGER")?;
+        add_column_if_missing(&conn, "skills", "last_check_error", "TEXT")?;
+
         Ok(Self {
             conn: Mutex::new(conn),
         })
@@ -159,21 +186,32 @@ impl SkillStore {
     pub fn insert_skill(&self, skill: &SkillRecord) -> Result<()> {
         let conn = self.conn.lock().unwrap();
         conn.execute(
-            "INSERT INTO skills (id, name, description, source_type, source_ref, source_revision, central_path, content_hash, enabled, created_at, updated_at, status)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)",
+            "INSERT INTO skills (
+                id, name, description, source_type, source_ref, source_ref_resolved, source_subpath,
+                source_branch, source_revision, remote_revision, central_path, content_hash, enabled,
+                created_at, updated_at, status, update_status, last_checked_at, last_check_error
+             )
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19)",
             params![
                 skill.id,
                 skill.name,
                 skill.description,
                 skill.source_type,
                 skill.source_ref,
+                skill.source_ref_resolved,
+                skill.source_subpath,
+                skill.source_branch,
                 skill.source_revision,
+                skill.remote_revision,
                 skill.central_path,
                 skill.content_hash,
                 skill.enabled,
                 skill.created_at,
                 skill.updated_at,
                 skill.status,
+                skill.update_status,
+                skill.last_checked_at,
+                skill.last_check_error,
             ],
         )?;
         Ok(())
@@ -182,49 +220,109 @@ impl SkillStore {
     pub fn get_all_skills(&self) -> Result<Vec<SkillRecord>> {
         let conn = self.conn.lock().unwrap();
         let mut stmt = conn.prepare(
-            "SELECT id, name, description, source_type, source_ref, source_revision, central_path, content_hash, enabled, created_at, updated_at, status FROM skills ORDER BY name",
+            "SELECT id, name, description, source_type, source_ref, source_ref_resolved, source_subpath,
+                    source_branch, source_revision, remote_revision, central_path, content_hash, enabled,
+                    created_at, updated_at, status, update_status, last_checked_at, last_check_error
+             FROM skills ORDER BY name",
         )?;
-        let rows = stmt.query_map([], |row| {
-            Ok(SkillRecord {
-                id: row.get(0)?,
-                name: row.get(1)?,
-                description: row.get(2)?,
-                source_type: row.get(3)?,
-                source_ref: row.get(4)?,
-                source_revision: row.get(5)?,
-                central_path: row.get(6)?,
-                content_hash: row.get(7)?,
-                enabled: row.get::<_, i32>(8)? != 0,
-                created_at: row.get(9)?,
-                updated_at: row.get(10)?,
-                status: row.get(11)?,
-            })
-        })?;
+        let rows = stmt.query_map([], map_skill_row)?;
         Ok(rows.filter_map(|r| r.ok()).collect())
     }
 
     pub fn get_skill_by_id(&self, id: &str) -> Result<Option<SkillRecord>> {
         let conn = self.conn.lock().unwrap();
         let mut stmt = conn.prepare(
-            "SELECT id, name, description, source_type, source_ref, source_revision, central_path, content_hash, enabled, created_at, updated_at, status FROM skills WHERE id = ?1",
+            "SELECT id, name, description, source_type, source_ref, source_ref_resolved, source_subpath,
+                    source_branch, source_revision, remote_revision, central_path, content_hash, enabled,
+                    created_at, updated_at, status, update_status, last_checked_at, last_check_error
+             FROM skills WHERE id = ?1",
         )?;
-        let mut rows = stmt.query_map(params![id], |row| {
-            Ok(SkillRecord {
-                id: row.get(0)?,
-                name: row.get(1)?,
-                description: row.get(2)?,
-                source_type: row.get(3)?,
-                source_ref: row.get(4)?,
-                source_revision: row.get(5)?,
-                central_path: row.get(6)?,
-                content_hash: row.get(7)?,
-                enabled: row.get::<_, i32>(8)? != 0,
-                created_at: row.get(9)?,
-                updated_at: row.get(10)?,
-                status: row.get(11)?,
-            })
-        })?;
+        let mut rows = stmt.query_map(params![id], map_skill_row)?;
         Ok(rows.next().and_then(|r| r.ok()))
+    }
+
+    pub fn update_skill_source_metadata(
+        &self,
+        id: &str,
+        source_ref_resolved: Option<&str>,
+        source_subpath: Option<&str>,
+        source_branch: Option<&str>,
+        source_revision: Option<&str>,
+    ) -> Result<()> {
+        let conn = self.conn.lock().unwrap();
+        let now = chrono::Utc::now().timestamp_millis();
+        conn.execute(
+            "UPDATE skills
+             SET source_ref_resolved = ?1, source_subpath = ?2, source_branch = ?3, source_revision = ?4, updated_at = ?5
+             WHERE id = ?6",
+            params![
+                source_ref_resolved,
+                source_subpath,
+                source_branch,
+                source_revision,
+                now,
+                id
+            ],
+        )?;
+        Ok(())
+    }
+
+    pub fn update_skill_check_state(
+        &self,
+        id: &str,
+        remote_revision: Option<&str>,
+        update_status: &str,
+        last_check_error: Option<&str>,
+    ) -> Result<()> {
+        let conn = self.conn.lock().unwrap();
+        let now = chrono::Utc::now().timestamp_millis();
+        conn.execute(
+            "UPDATE skills
+             SET remote_revision = ?1, update_status = ?2, last_checked_at = ?3, last_check_error = ?4
+             WHERE id = ?5",
+            params![remote_revision, update_status, now, last_check_error, id],
+        )?;
+        Ok(())
+    }
+
+    pub fn update_skill_update_status(&self, id: &str, update_status: &str) -> Result<()> {
+        let conn = self.conn.lock().unwrap();
+        conn.execute(
+            "UPDATE skills SET update_status = ?1 WHERE id = ?2",
+            params![update_status, id],
+        )?;
+        Ok(())
+    }
+
+    pub fn update_skill_after_install(
+        &self,
+        id: &str,
+        name: &str,
+        description: Option<&str>,
+        source_revision: Option<&str>,
+        remote_revision: Option<&str>,
+        content_hash: Option<&str>,
+        update_status: &str,
+    ) -> Result<()> {
+        let conn = self.conn.lock().unwrap();
+        let now = chrono::Utc::now().timestamp_millis();
+        conn.execute(
+            "UPDATE skills
+             SET name = ?1, description = ?2, source_revision = ?3, remote_revision = ?4, content_hash = ?5,
+                 updated_at = ?6, update_status = ?7, last_checked_at = ?6, last_check_error = NULL
+             WHERE id = ?8",
+            params![
+                name,
+                description,
+                source_revision,
+                remote_revision,
+                content_hash,
+                now,
+                update_status,
+                id
+            ],
+        )?;
+        Ok(())
     }
 
     pub fn delete_skill(&self, id: &str) -> Result<()> {
@@ -494,28 +592,15 @@ impl SkillStore {
     pub fn get_skills_for_scenario(&self, scenario_id: &str) -> Result<Vec<SkillRecord>> {
         let conn = self.conn.lock().unwrap();
         let mut stmt = conn.prepare(
-            "SELECT s.id, s.name, s.description, s.source_type, s.source_ref, s.source_revision, s.central_path, s.content_hash, s.enabled, s.created_at, s.updated_at, s.status
+            "SELECT s.id, s.name, s.description, s.source_type, s.source_ref, s.source_ref_resolved, s.source_subpath,
+                    s.source_branch, s.source_revision, s.remote_revision, s.central_path, s.content_hash, s.enabled,
+                    s.created_at, s.updated_at, s.status, s.update_status, s.last_checked_at, s.last_check_error
              FROM skills s
              INNER JOIN scenario_skills ss ON s.id = ss.skill_id
              WHERE ss.scenario_id = ?1
              ORDER BY s.name",
         )?;
-        let rows = stmt.query_map(params![scenario_id], |row| {
-            Ok(SkillRecord {
-                id: row.get(0)?,
-                name: row.get(1)?,
-                description: row.get(2)?,
-                source_type: row.get(3)?,
-                source_ref: row.get(4)?,
-                source_revision: row.get(5)?,
-                central_path: row.get(6)?,
-                content_hash: row.get(7)?,
-                enabled: row.get::<_, i32>(8)? != 0,
-                created_at: row.get(9)?,
-                updated_at: row.get(10)?,
-                status: row.get(11)?,
-            })
-        })?;
+        let rows = stmt.query_map(params![scenario_id], map_skill_row)?;
         Ok(rows.filter_map(|r| r.ok()).collect())
     }
 
@@ -557,4 +642,50 @@ impl SkillStore {
         )?;
         Ok(())
     }
+}
+
+fn add_column_if_missing(
+    conn: &Connection,
+    table: &str,
+    column: &str,
+    definition: &str,
+) -> Result<()> {
+    if !has_column(conn, table, column)? {
+        conn.execute(
+            &format!("ALTER TABLE {table} ADD COLUMN {column} {definition}"),
+            [],
+        )?;
+    }
+    Ok(())
+}
+
+fn has_column(conn: &Connection, table: &str, column: &str) -> Result<bool> {
+    let mut stmt = conn.prepare(&format!("PRAGMA table_info({table})"))?;
+    let rows = stmt.query_map([], |row| row.get::<_, String>(1))?;
+    let exists = rows.filter_map(|row| row.ok()).any(|name| name == column);
+    Ok(exists)
+}
+
+fn map_skill_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<SkillRecord> {
+    Ok(SkillRecord {
+        id: row.get(0)?,
+        name: row.get(1)?,
+        description: row.get(2)?,
+        source_type: row.get(3)?,
+        source_ref: row.get(4)?,
+        source_ref_resolved: row.get(5)?,
+        source_subpath: row.get(6)?,
+        source_branch: row.get(7)?,
+        source_revision: row.get(8)?,
+        remote_revision: row.get(9)?,
+        central_path: row.get(10)?,
+        content_hash: row.get(11)?,
+        enabled: row.get::<_, i32>(12)? != 0,
+        created_at: row.get(13)?,
+        updated_at: row.get(14)?,
+        status: row.get(15)?,
+        update_status: row.get(16)?,
+        last_checked_at: row.get(17)?,
+        last_check_error: row.get(18)?,
+    })
 }

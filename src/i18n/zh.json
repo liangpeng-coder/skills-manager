@@ -13,6 +13,42 @@
   "topbar": {
     "supportedSkills": "支持的 Skills"
   },
+  "search": {
+    "placeholder": "搜索 Skills 名称、描述或来源",
+    "emptyTitle": "全局搜索",
+    "emptyDescription": "输入 Skill 名称、描述或来源。按 Enter 直接打开详情。",
+    "noResultsTitle": "没有匹配的 Skills",
+    "noResultsDescription": "试试更短的名称、描述关键词，或来源类型。",
+    "scenarioCount": "{{count}} 个场景",
+    "enabledInCurrent": "当前场景已启用"
+  },
+  "help": {
+    "eyebrow": "操作指南",
+    "title": "快速上手 Skills Manager",
+    "description": "这几个动作就够用，其他能力都围绕它们展开。",
+    "items": {
+      "scenarios": {
+        "title": "场景就是一组 Skill 组合",
+        "description": "把工作、学习、开源项目分成不同场景，每个场景维护自己的启用列表。"
+      },
+      "switching": {
+        "title": "切换场景会自动切换同步结果",
+        "description": "点击左侧场景后，应用会取消旧场景同步，并把当前场景的 Skills 同步到已检测到的 Agent。"
+      },
+      "install": {
+        "title": "从本地、Git 或市场安装",
+        "description": "安装完成后，Skill 会进入中央仓库，并可立即加入当前场景。"
+      },
+      "sync": {
+        "title": "在“我的 Skills”里管理启用与同步",
+        "description": "你可以决定某个 Skill 是否属于当前场景，也可以手动同步或取消同步到各个 Agent。"
+      },
+      "search": {
+        "title": "使用 ⌘K 全局搜索",
+        "description": "无论在哪个页面，都可以用顶部搜索或 ⌘K 快速定位 Skill 并直接打开详情。"
+      }
+    }
+  },
   "dashboard": {
     "greeting": "你好！",
     "currentScenario": "当前场景",
@@ -33,6 +69,7 @@
     "sync": "同步",
     "unsync": "取消同步",
     "enable": "启用",
+    "enabledButton": "已启用",
     "disable": "停用",
     "enableForScenario": "启用到当前场景",
     "disableForScenario": "从当前场景停用",
@@ -57,6 +94,25 @@
     "agentCount": "{{count}} 个 Agent",
     "ready": "已就绪",
     "standby": "待启用",
+    "updateStatus": {
+      "unknown": "未知",
+      "checking": "检查中",
+      "updating": "更新中",
+      "upToDate": "已最新",
+      "available": "可更新",
+      "error": "检查失败",
+      "localOnly": "本地来源",
+      "sourceMissing": "原路径丢失"
+    },
+    "updateActions": {
+      "check": "检查",
+      "checkAll": "检查全部",
+      "checkedAll": "已检查全部 Skill 更新",
+      "update": "更新",
+      "updated": "Skill 已更新",
+      "reimport": "重新导入",
+      "reimported": "Skill 已重新导入"
+    },
     "filters": {
       "all": "全部",
       "enabled": "当前场景已启用",
@@ -74,6 +130,12 @@
     "searchMarket": "搜索 skills.sh 市场...",
     "oneClickInstall": "一键安装",
     "viewOnWeb": "在 skills.sh 查看",
+    "pagination": {
+      "summary": "显示第 {{start}} - {{end}} 项，共 {{total}} 个 Skill",
+      "page": "第 {{current}} / {{total}} 页",
+      "previous": "上一页",
+      "next": "下一页"
+    },
     "installing": "安装中...",
     "dragDrop": "拖拽 Skills 文件夹到此处",
     "dragDropDesc": "支持包含 SKILL.md 的文件夹、.zip 压缩包或单体 .skill 文件。",
@@ -99,7 +161,14 @@
       "importedAll": "已导入全部本地 Skills",
       "noResults": "没有发现可导入的本地 Skills",
       "noResultsHint": "当前目录可能已经全部纳入管理，或者相关 Agent 目录中还没有 Skills。",
-      "locations": "{{count}} 个来源位置"
+      "locations": "{{count}} 个来源位置",
+      "listHint": "检测到现有本地 Skills，可直接导入到中央仓库并加入当前场景。",
+      "listImportedHint": "扫描结果都已纳入中央仓库，无需重复导入。",
+      "stats": {
+        "detected": "已发现",
+        "pending": "待导入",
+        "imported": "已导入"
+      }
     }
   },
   "settings": {

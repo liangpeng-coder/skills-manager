@@ -87,28 +87,51 @@ pub fn install_from_local(source: &Path, name: Option<&str>) -> Result<InstallRe
         _ => skill_metadata::infer_skill_name(skill_dir),
     };
 
-    let meta = skill_metadata::parse_skill_md(skill_dir);
     let dest = central_repo::skills_dir().join(&skill_name);
+    install_skill_dir_to_destination(skill_dir, &skill_name, &dest)
+}
 
-    if dest.exists() {
-        std::fs::remove_dir_all(&dest)
-            .with_context(|| format!("Failed to remove existing {:?}", dest))?;
-    }
+pub fn install_from_local_to_destination(
+    source: &Path,
+    name: Option<&str>,
+    destination: &Path,
+) -> Result<InstallResult> {
+    let prepared = PreparedSource::open(source)?;
+    let skill_dir = prepared.skill_dir();
 
-    copy_skill_dir(skill_dir, &dest)?;
-
-    let hash = content_hash::hash_directory(&dest)?;
-
-    Ok(InstallResult {
-        name: skill_name,
-        description: meta.description,
-        central_path: dest,
-        content_hash: hash,
-    })
+    let skill_name = match name {
+        Some(n) if !n.is_empty() => n.to_string(),
+        _ => skill_metadata::infer_skill_name(skill_dir),
+    };
+    install_skill_dir_to_destination(skill_dir, &skill_name, destination)
 }
 
 pub fn install_from_git_dir(source: &Path, name: Option<&str>) -> Result<InstallResult> {
     install_from_local(source, name)
+}
+
+pub fn install_skill_dir_to_destination(
+    source: &Path,
+    name: &str,
+    destination: &Path,
+) -> Result<InstallResult> {
+    let meta = skill_metadata::parse_skill_md(source);
+
+    if destination.exists() {
+        std::fs::remove_dir_all(destination)
+            .with_context(|| format!("Failed to remove existing {:?}", destination))?;
+    }
+
+    copy_skill_dir(source, destination)?;
+
+    let hash = content_hash::hash_directory(destination)?;
+
+    Ok(InstallResult {
+        name: name.to_string(),
+        description: meta.description,
+        central_path: destination.to_path_buf(),
+        content_hash: hash,
+    })
 }
 
 fn copy_skill_dir(src: &Path, dst: &Path) -> Result<()> {

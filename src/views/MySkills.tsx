@@ -1,17 +1,17 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import {
   Search,
   LayoutGrid,
   List,
-  FileText,
   CheckCircle2,
   Circle,
-  Plus,
   Github,
   HardDrive,
   Globe,
   Trash2,
   Layers,
+  RefreshCw,
+  RotateCcw,
 } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
@@ -24,12 +24,23 @@ import type { ManagedSkill } from "../lib/tauri";
 
 export function MySkills() {
   const { t } = useTranslation();
-  const { activeScenario, tools, managedSkills: skills, refreshScenarios, refreshManagedSkills } = useApp();
+  const {
+    activeScenario,
+    tools,
+    managedSkills: skills,
+    refreshScenarios,
+    refreshManagedSkills,
+    detailSkillId,
+    openSkillDetailById,
+    closeSkillDetail,
+  } = useApp();
   const [viewMode, setViewMode] = useState<"grid" | "list">("grid");
   const [filterMode, setFilterMode] = useState<"all" | "enabled" | "available">("all");
   const [search, setSearch] = useState("");
-  const [selectedSkill, setSelectedSkill] = useState<ManagedSkill | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<ManagedSkill | null>(null);
+  const [checkingAll, setCheckingAll] = useState(false);
+  const [checkingSkillId, setCheckingSkillId] = useState<string | null>(null);
+  const [updatingSkillId, setUpdatingSkillId] = useState<string | null>(null);
 
   const installedTools = tools.filter((tool) => tool.installed);
   const activeScenarioName = activeScenario?.name || t("mySkills.currentScenarioFallback");
@@ -52,6 +63,11 @@ export function MySkills() {
     return true;
   });
 
+  const selectedSkill = useMemo(
+    () => skills.find((skill) => skill.id === detailSkillId) || null,
+    [detailSkillId, skills]
+  );
+
   const handleSync = async (skill: ManagedSkill) => {
     for (const tool of installedTools) {
       if (!skill.targets.find((target) => target.tool === tool.key)) {
@@ -73,7 +89,7 @@ export function MySkills() {
   const handleDeleteManagedSkill = async () => {
     if (!deleteTarget) return;
     await api.deleteManagedSkill(deleteTarget.id);
-    if (selectedSkill?.id === deleteTarget.id) setSelectedSkill(null);
+    if (selectedSkill?.id === deleteTarget.id) closeSkillDetail();
     toast.success(`${deleteTarget.name} ${t("mySkills.deleted")}`);
     setDeleteTarget(null);
     await Promise.all([refreshManagedSkills(), refreshScenarios()]);
@@ -92,6 +108,51 @@ export function MySkills() {
     await Promise.all([refreshManagedSkills(), refreshScenarios()]);
   };
 
+  const handleCheckAllUpdates = async () => {
+    setCheckingAll(true);
+    try {
+      await api.checkAllSkillUpdates(true);
+      toast.success(t("mySkills.updateActions.checkedAll"));
+      await refreshManagedSkills();
+    } catch (e: any) {
+      toast.error(e.toString());
+    } finally {
+      setCheckingAll(false);
+    }
+  };
+
+  const handleCheckUpdate = async (skill: ManagedSkill) => {
+    setCheckingSkillId(skill.id);
+    try {
+      await api.checkSkillUpdate(skill.id, true);
+      await refreshManagedSkills();
+    } catch (e: any) {
+      toast.error(e.toString());
+      await refreshManagedSkills();
+    } finally {
+      setCheckingSkillId(null);
+    }
+  };
+
+  const handleRefreshSkill = async (skill: ManagedSkill) => {
+    setUpdatingSkillId(skill.id);
+    try {
+      if (skill.source_type === "local" || skill.source_type === "import") {
+        await api.reimportLocalSkill(skill.id);
+        toast.success(t("mySkills.updateActions.reimported"));
+      } else {
+        await api.updateSkill(skill.id);
+        toast.success(t("mySkills.updateActions.updated"));
+      }
+      await refreshManagedSkills();
+    } catch (e: any) {
+      toast.error(e.toString());
+      await refreshManagedSkills();
+    } finally {
+      setUpdatingSkillId(null);
+    }
+  };
+
   const sourceIcon = (type: string) => {
     switch (type) {
       case "git":
@@ -103,6 +164,63 @@ export function MySkills() {
       default:
         return <Globe className="w-3 h-3" />;
     }
+  };
+
+  const canRefresh = (skill: ManagedSkill) =>
+    skill.source_type === "git" ||
+    skill.source_type === "skillssh" ||
+    skill.source_type === "local" ||
+    skill.source_type === "import";
+
+  const sourceTypeLabel = (skill: ManagedSkill) =>
+    skill.source_type === "skillssh" ? "skills.sh" : skill.source_type;
+
+  const refreshLabel = (skill: ManagedSkill) =>
+    skill.source_type === "local" || skill.source_type === "import"
+      ? t("mySkills.updateActions.reimport")
+      : t("mySkills.updateActions.update");
+
+  const statusBadge = (skill: ManagedSkill, enabledInScenario: boolean, isSynced: boolean) => {
+    if (skill.update_status === "update_available") {
+      return {
+        label: "Update",
+        className: "bg-amber-500/12 text-amber-400",
+      };
+    }
+    if (skill.update_status === "source_missing") {
+      return {
+        label: t("mySkills.updateStatus.sourceMissing"),
+        className: "bg-red-500/10 text-red-300",
+      };
+    }
+    if (skill.update_status === "error") {
+      return {
+        label: t("mySkills.updateStatus.error"),
+        className: "bg-red-500/10 text-red-300",
+      };
+    }
+    if (enabledInScenario) {
+      return {
+        label: activeScenarioName,
+        className: "bg-amber-500/10 text-amber-400/90",
+      };
+    }
+    if (isSynced) {
+      return {
+        label: t("mySkills.synced"),
+        className: "bg-emerald-500/10 text-emerald-400",
+      };
+    }
+    if (skill.update_status === "local_only") {
+      return {
+        label: t("mySkills.updateStatus.localOnly"),
+        className: "bg-background text-faint",
+      };
+    }
+    return {
+      label: t("mySkills.standby"),
+      className: "bg-background text-faint",
+    };
   };
 
   return (
@@ -156,6 +274,14 @@ export function MySkills() {
 
         <div className="flex rounded-[5px] border border-border-subtle bg-surface p-0.5">
           <button
+            onClick={handleCheckAllUpdates}
+            disabled={checkingAll}
+            className="mr-2 inline-flex items-center gap-1 rounded-[4px] px-3 py-2 text-[12px] font-medium text-muted transition-colors hover:bg-surface-hover hover:text-secondary disabled:opacity-50"
+          >
+            <RefreshCw className={cn("h-3.5 w-3.5", checkingAll && "animate-spin")} />
+            {t("mySkills.updateActions.checkAll")}
+          </button>
+          <button
             onClick={() => setViewMode("grid")}
             className={cn(
               "rounded-[4px] p-2 transition-colors outline-none",
@@ -198,8 +324,7 @@ export function MySkills() {
             const enabledInScenario = activeScenario
               ? skill.scenario_ids.includes(activeScenario.id)
               : false;
-            const sourceTypeLabel =
-              skill.source_type === "skillssh" ? "skills.sh" : skill.source_type;
+            const badge = statusBadge(skill, enabledInScenario, isSynced);
 
             /* ── Grid Card ── */
             if (viewMode === "grid") {
@@ -208,80 +333,98 @@ export function MySkills() {
                   key={skill.id}
                   className="group relative flex flex-col overflow-hidden rounded-lg border border-border-subtle bg-surface transition-all hover:border-border hover:bg-surface-hover"
                 >
-                  {/* Header */}
-                  <div className="flex items-center gap-2.5 px-3.5 pt-3 pb-1.5">
-                    {isSynced ? (
-                      <CheckCircle2 className="h-3.5 w-3.5 shrink-0 text-emerald-500" />
-                    ) : (
-                      <Circle className="h-3.5 w-3.5 shrink-0 text-faint" />
-                    )}
-                    <h3
-                      className="flex-1 truncate text-[14px] font-semibold text-primary cursor-pointer hover:text-accent-light"
-                      onClick={() => setSelectedSkill(skill)}
-                      title={skill.name}
+                  <div className="absolute right-3 top-3 flex items-center gap-1 opacity-100 transition-opacity sm:opacity-0 sm:group-hover:opacity-100">
+                    <button
+                      onClick={() => handleCheckUpdate(skill)}
+                      disabled={checkingSkillId === skill.id}
+                      className="rounded p-1 text-muted transition-colors hover:bg-surface-hover hover:text-secondary disabled:opacity-50"
+                      title={t("mySkills.updateActions.check")}
                     >
-                      {skill.name}
-                    </h3>
+                      <RefreshCw className={cn("h-3.5 w-3.5", checkingSkillId === skill.id && "animate-spin")} />
+                    </button>
+                    {canRefresh(skill) && (
+                      <button
+                        onClick={() => handleRefreshSkill(skill)}
+                        disabled={updatingSkillId === skill.id}
+                        className="rounded p-1 text-accent-light transition-colors hover:bg-accent-bg disabled:opacity-50"
+                        title={refreshLabel(skill)}
+                      >
+                        <RotateCcw className={cn("h-3.5 w-3.5", updatingSkillId === skill.id && "animate-spin")} />
+                      </button>
+                    )}
                     <button
                       onClick={() => setDeleteTarget(skill)}
-                      className="shrink-0 rounded p-1 text-faint opacity-0 transition-all group-hover:opacity-100 hover:text-red-400"
+                      className="rounded p-1 text-faint transition-colors hover:bg-surface-hover hover:text-red-400"
                       title={t("mySkills.delete")}
                     >
                       <Trash2 className="h-3.5 w-3.5" />
                     </button>
                   </div>
 
-                  {/* Description */}
-                  <p className="px-3.5 text-[12px] leading-[18px] text-muted truncate">
-                    {skill.description || "—"}
-                  </p>
-
-                  {/* Footer */}
-                  <div className="mt-auto flex items-center justify-between gap-2 border-t border-border-subtle px-3.5 py-2">
-                    <div className="flex items-center gap-1.5 min-w-0">
-                      <span className="inline-flex items-center gap-1 text-[11px] text-faint shrink-0">
-                        {sourceIcon(skill.source_type)}
-                        {sourceTypeLabel}
-                      </span>
-                      <span className="text-faint">·</span>
-                      <span
-                        className={cn(
-                          "text-[11px] font-medium truncate",
-                          enabledInScenario ? "text-amber-400/80" : "text-faint"
+                  <div className="flex flex-1 flex-col px-3 pb-0 pt-3">
+                    <div className="mb-1 flex items-start gap-2 pr-24">
+                      <div className="mt-0.5">
+                        {isSynced ? (
+                          <CheckCircle2 className="h-3.5 w-3.5 shrink-0 text-emerald-500" />
+                        ) : (
+                          <Circle className="h-3.5 w-3.5 shrink-0 text-faint" />
                         )}
-                      >
-                        {enabledInScenario ? activeScenarioName : t("mySkills.notInScenario")}
-                      </span>
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <h3
+                          className="min-w-0 cursor-pointer truncate text-[13px] font-semibold text-secondary hover:text-primary"
+                          onClick={() => openSkillDetailById(skill.id)}
+                          title={skill.name}
+                        >
+                          {skill.name}
+                        </h3>
+                        <p className="mt-2 min-h-[36px] text-[12px] leading-[18px] text-muted line-clamp-2">
+                          {skill.description || "—"}
+                        </p>
+                      </div>
                     </div>
-                    <div className="flex items-center gap-1.5 shrink-0">
+
+                    <div className="mt-auto flex items-center justify-between gap-2 border-t border-border-subtle px-0 py-2">
+                      <div className="flex min-w-0 items-center gap-1.5">
+                        <span className="inline-flex shrink-0 items-center gap-1 text-[10px] text-muted">
+                          {sourceIcon(skill.source_type)}
+                          {sourceTypeLabel(skill)}
+                        </span>
+                        <span className="text-faint">·</span>
+                        <span
+                          className={cn(
+                            "truncate rounded-full px-2 py-0.5 text-[10px] font-medium",
+                            badge.className
+                          )}
+                        >
+                          {badge.label}
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-1 shrink-0">
                       <button
                         onClick={() => handleToggleScenario(skill)}
                         disabled={!activeScenario}
                         className={cn(
-                          "rounded px-2 py-1 text-[12px] font-medium transition-colors outline-none",
+                          "rounded px-2 py-0.5 text-[11px] font-medium transition-colors outline-none",
                           enabledInScenario
-                            ? "text-emerald-400 hover:bg-emerald-500/10"
+                            ? "text-accent-light hover:bg-accent-bg"
                             : "text-muted hover:bg-surface-hover hover:text-secondary"
                         )}
                       >
-                        {enabledInScenario ? t("mySkills.disable") : (
-                          <span className="inline-flex items-center gap-0.5">
-                            <Plus className="h-3 w-3" />
-                            {t("mySkills.enable")}
-                          </span>
-                        )}
+                        {enabledInScenario ? t("mySkills.enabledButton") : t("mySkills.enable")}
                       </button>
                       <button
                         onClick={() => (isSynced ? handleUnsync(skill) : handleSync(skill))}
                         className={cn(
-                          "rounded px-2 py-1 text-[12px] font-medium transition-colors outline-none",
+                          "rounded px-2 py-0.5 text-[11px] font-medium transition-colors outline-none",
                           isSynced
-                            ? "text-tertiary hover:bg-surface-hover hover:text-red-400"
+                            ? "text-accent-light hover:bg-accent-bg"
                             : "text-accent-light hover:bg-accent-bg"
                         )}
                       >
                         {isSynced ? t("mySkills.synced") : t("mySkills.sync")}
-                      </button>
+                        </button>
+                      </div>
                     </div>
                   </div>
                 </div>
@@ -292,7 +435,7 @@ export function MySkills() {
             return (
               <div
                 key={skill.id}
-                className="group flex items-center gap-3.5 rounded-[5px] border border-transparent bg-surface px-3.5 py-2.5 transition-all hover:border-border hover:bg-surface-hover"
+                className="group flex items-center gap-3 rounded-lg border border-transparent bg-surface px-3 py-2 transition-all hover:border-border-subtle hover:bg-surface-hover"
               >
                 {isSynced ? (
                   <CheckCircle2 className="h-3.5 w-3.5 shrink-0 text-emerald-500" />
@@ -301,8 +444,8 @@ export function MySkills() {
                 )}
 
                 <h3
-                  className="w-[180px] shrink-0 truncate text-[14px] font-semibold text-secondary cursor-pointer hover:text-primary"
-                  onClick={() => setSelectedSkill(skill)}
+                  className="w-[180px] shrink-0 truncate text-[13px] font-semibold text-secondary cursor-pointer hover:text-primary"
+                  onClick={() => openSkillDetailById(skill.id)}
                   title={skill.name}
                 >
                   {skill.name}
@@ -312,48 +455,66 @@ export function MySkills() {
                   {skill.description || "—"}
                 </p>
 
-                <div className="flex shrink-0 items-center gap-2.5">
-                  <span className="inline-flex items-center gap-1 text-[11px] text-faint">
+                <div className="flex shrink-0 items-center gap-2">
+                  <span className="inline-flex items-center gap-1 text-[10px] text-muted">
                     {sourceIcon(skill.source_type)}
-                    {sourceTypeLabel}
+                    {sourceTypeLabel(skill)}
                   </span>
                   <span
                     className={cn(
-                      "text-[11px] font-medium",
-                      enabledInScenario ? "text-amber-400/80" : "text-faint"
+                      "rounded-full px-2 py-0.5 text-[10px] font-medium",
+                      badge.className
                     )}
                   >
-                    {enabledInScenario ? activeScenarioName : t("mySkills.notInScenario")}
+                    {badge.label}
                   </span>
                 </div>
 
-                <div className="flex shrink-0 items-center gap-1.5 opacity-0 transition-opacity group-hover:opacity-100">
+                <div className="flex shrink-0 items-center gap-1 opacity-0 transition-opacity group-hover:opacity-100">
                   <button
                     onClick={() => handleToggleScenario(skill)}
                     disabled={!activeScenario}
                     className={cn(
-                      "rounded px-2 py-1 text-[12px] font-medium transition-colors outline-none",
+                      "rounded px-2 py-0.5 text-[11px] font-medium transition-colors outline-none",
                       enabledInScenario
-                        ? "text-emerald-400 hover:bg-emerald-500/10"
+                        ? "text-accent-light hover:bg-accent-bg"
                         : "text-muted hover:bg-surface-hover hover:text-secondary"
                     )}
                   >
-                    {enabledInScenario ? t("mySkills.disable") : t("mySkills.enable")}
+                    {enabledInScenario ? t("mySkills.enabledButton") : t("mySkills.enable")}
                   </button>
                   <button
                     onClick={() => (isSynced ? handleUnsync(skill) : handleSync(skill))}
                     className={cn(
-                      "rounded px-2 py-1 text-[12px] font-medium transition-colors outline-none",
+                      "rounded px-2 py-0.5 text-[11px] font-medium transition-colors outline-none",
                       isSynced
-                        ? "text-tertiary hover:text-red-400"
+                        ? "text-accent-light hover:bg-accent-bg"
                         : "text-accent-light hover:bg-accent-bg"
                     )}
                   >
                     {isSynced ? t("mySkills.synced") : t("mySkills.sync")}
                   </button>
                   <button
+                    onClick={() => handleCheckUpdate(skill)}
+                    disabled={checkingSkillId === skill.id}
+                    className="rounded p-0.5 text-muted transition-colors hover:bg-surface-hover hover:text-secondary disabled:opacity-50"
+                    title={t("mySkills.updateActions.check")}
+                  >
+                    <RefreshCw className={cn("h-3.5 w-3.5", checkingSkillId === skill.id && "animate-spin")} />
+                  </button>
+                  {canRefresh(skill) && (
+                    <button
+                      onClick={() => handleRefreshSkill(skill)}
+                      disabled={updatingSkillId === skill.id}
+                      className="rounded p-0.5 text-accent-light transition-colors hover:bg-accent-bg disabled:opacity-50"
+                      title={refreshLabel(skill)}
+                    >
+                      <RotateCcw className={cn("h-3.5 w-3.5", updatingSkillId === skill.id && "animate-spin")} />
+                    </button>
+                  )}
+                  <button
                     onClick={() => setDeleteTarget(skill)}
-                    className="rounded p-1 text-faint transition-colors hover:text-red-400"
+                    className="rounded p-0.5 text-faint transition-colors hover:text-red-400"
                     title={t("mySkills.delete")}
                   >
                     <Trash2 className="h-3.5 w-3.5" />
@@ -365,7 +526,7 @@ export function MySkills() {
         </div>
       )}
 
-      <SkillDetailPanel skill={selectedSkill} onClose={() => setSelectedSkill(null)} />
+      <SkillDetailPanel skill={selectedSkill} onClose={closeSkillDetail} />
       <ConfirmDialog
         open={deleteTarget !== null}
         message={t("mySkills.deleteConfirm", { name: deleteTarget?.name || "" })}
