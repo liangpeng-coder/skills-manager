@@ -255,9 +255,14 @@ export function InstallSkills() {
     [marketSkills]
   );
   const filteredMarketSkills = useMemo(() => {
-    if (marketSourceFilter === "all") return marketSkills;
-    return marketSkills.filter((skill) => skill.source === marketSourceFilter);
-  }, [marketSkills, marketSourceFilter]);
+    const filtered = marketSourceFilter === "all"
+      ? marketSkills
+      : marketSkills.filter((skill) => skill.source === marketSourceFilter);
+    if (debouncedMarketQuery.trim().length > 0) {
+      return [...filtered].sort((a, b) => b.installs - a.installs);
+    }
+    return filtered;
+  }, [marketSkills, marketSourceFilter, debouncedMarketQuery]);
   const totalMarketPages = Math.max(1, Math.ceil(filteredMarketSkills.length / MARKET_PAGE_SIZE));
   const currentMarketPage = Math.min(marketPage, totalMarketPages);
   const marketPageStart = (currentMarketPage - 1) * MARKET_PAGE_SIZE;
