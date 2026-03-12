@@ -342,6 +342,32 @@
     "selectAll": "Select All",
     "deselectAll": "Deselect All",
     "openInFinder": "Open Directory",
-    "skillFiles": "Files"
+    "skillFiles": "Files",
+    "importToCenter": "Import to Center",
+    "importFromCenter": "Import from Center",
+    "importToCenterSuccess": "\"{{name}}\" imported to Skills Center",
+    "importFromCenterSuccess": "\"{{name}}\" imported to project",
+    "alreadyInCenter": "In Center",
+    "exportToProject": "Export to Project",
+    "enableSkill": "Enable",
+    "disableSkill": "Disable",
+    "enabled": "Enabled",
+    "disabled": "Disabled",
+    "skillEnabled": "\"{{name}}\" enabled",
+    "skillDisabled": "\"{{name}}\" disabled",
+    "searchPlaceholder": "Search skills in this project...",
+    "filters": {
+      "all": "All",
+      "enabled": "Enabled",
+      "disabled": "Disabled"
+    },
+    "selectSkillToExport": "Select a skill to import into the project",
+    "searchCenterSkills": "Search skills in the central library...",
+    "noSkillsToExport": "No skills available to import from center",
+    "alreadyExists": "Already exists",
+    "import": "Import",
+    "deleteSkill": "Delete skill",
+    "deleteSkillConfirm": "Permanently delete skill \"{{name}}\"? This action cannot be undone.",
+    "skillDeleted": "\"{{name}}\" deleted"
   }
 }

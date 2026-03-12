@@ -77,6 +77,10 @@ pub fn run() {
             commands::projects::scan_projects,
             commands::projects::get_project_skills,
             commands::projects::get_project_skill_document,
+            commands::projects::import_project_skill_to_center,
+            commands::projects::export_skill_to_project,
+            commands::projects::toggle_project_skill,
+            commands::projects::delete_project_skill,
             // Scenarios
             commands::scenarios::get_scenarios,
             commands::scenarios::get_active_scenario,

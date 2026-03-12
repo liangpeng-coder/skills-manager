@@ -1,11 +1,11 @@
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use serde::Serialize;
 use tauri::State;
 
-use crate::core::project_scanner;
-use crate::core::skill_store::{ProjectRecord, SkillStore};
+use crate::core::{installer, project_scanner, sync_engine};
+use crate::core::skill_store::{ProjectRecord, SkillRecord, SkillStore};
 
 #[derive(Serialize)]
 pub struct ProjectDto {
@@ -94,7 +94,21 @@ pub fn get_project_skills(
         .get_project_by_id(&project_id)
         .map_err(|e| e.to_string())?
         .ok_or_else(|| "Project not found".to_string())?;
-    Ok(project_scanner::read_project_skills(Path::new(&record.path)))
+
+    let mut skills = project_scanner::read_project_skills(Path::new(&record.path));
+
+    // Check which project skills are already in the central library
+    let all_managed = store.get_all_skills().unwrap_or_default();
+    for skill in &mut skills {
+        skill.in_center = all_managed.iter().any(|m| {
+            // Match by source_ref path
+            m.source_ref.as_deref() == Some(&skill.path)
+                // Or match by name (case-insensitive)
+                || m.name.to_lowercase() == skill.name.to_lowercase()
+        });
+    }
+
+    Ok(skills)
 }
 
 #[tauri::command]
@@ -102,14 +116,18 @@ pub fn get_project_skill_document(
     project_path: String,
     skill_name: String,
 ) -> Result<ProjectSkillDocumentDto, String> {
-    let skill_dir = Path::new(&project_path)
-        .join(".claude")
-        .join("skills")
-        .join(&skill_name);
-
-    if !skill_dir.is_dir() {
-        return Err("Skill directory not found".to_string());
-    }
+    let claude_dir = Path::new(&project_path).join(".claude");
+    let skill_dir = claude_dir.join("skills").join(&skill_name);
+    let skill_dir = if skill_dir.is_dir() {
+        skill_dir
+    } else {
+        let disabled = claude_dir.join("skills-disabled").join(&skill_name);
+        if disabled.is_dir() {
+            disabled
+        } else {
+            return Err("Skill directory not found".to_string());
+        }
+    };
 
     let candidates = ["SKILL.md", "skill.md", "CLAUDE.md", "README.md"];
     for candidate in &candidates {
@@ -125,4 +143,167 @@ pub fn get_project_skill_document(
     }
 
     Err("No document file found in skill directory".to_string())
+}
+
+#[tauri::command]
+pub fn import_project_skill_to_center(
+    store: State<'_, Arc<SkillStore>>,
+    project_id: String,
+    skill_name: String,
+) -> Result<(), String> {
+    let record = store
+        .get_project_by_id(&project_id)
+        .map_err(|e| e.to_string())?
+        .ok_or_else(|| "Project not found".to_string())?;
+
+    let skills = project_scanner::read_project_skills(Path::new(&record.path));
+    let skill = skills
+        .iter()
+        .find(|s| s.name == skill_name)
+        .ok_or_else(|| "Skill not found in project".to_string())?;
+
+    let source_path = PathBuf::from(&skill.path);
+    let result = installer::install_from_local(&source_path, Some(&skill.name))
+        .map_err(|e| e.to_string())?;
+
+    let active = store.get_active_scenario_id().ok().flatten();
+    let now = chrono::Utc::now().timestamp_millis();
+    let id = uuid::Uuid::new_v4().to_string();
+
+    let skill_record = SkillRecord {
+        id: id.clone(),
+        name: result.name.clone(),
+        description: result.description.clone(),
+        source_type: "local".to_string(),
+        source_ref: Some(skill.path.clone()),
+        source_ref_resolved: None,
+        source_subpath: None,
+        source_branch: None,
+        source_revision: None,
+        remote_revision: None,
+        central_path: result.central_path.to_string_lossy().to_string(),
+        content_hash: Some(result.content_hash.clone()),
+        enabled: true,
+        created_at: now,
+        updated_at: now,
+        status: "ok".to_string(),
+        update_status: "local_only".to_string(),
+        last_checked_at: Some(now),
+        last_check_error: None,
+    };
+
+    store.insert_skill(&skill_record).map_err(|e| e.to_string())?;
+
+    if let Some(scenario_id) = active.as_deref() {
+        store
+            .add_skill_to_scenario(scenario_id, &id)
+            .map_err(|e| e.to_string())?;
+    }
+
+    Ok(())
+}
+
+#[tauri::command]
+pub fn export_skill_to_project(
+    store: State<'_, Arc<SkillStore>>,
+    skill_id: String,
+    project_id: String,
+) -> Result<(), String> {
+    let project = store
+        .get_project_by_id(&project_id)
+        .map_err(|e| e.to_string())?
+        .ok_or_else(|| "Project not found".to_string())?;
+
+    let skill = store
+        .get_skill_by_id(&skill_id)
+        .map_err(|e| e.to_string())?
+        .ok_or_else(|| "Skill not found".to_string())?;
+
+    let target_dir = Path::new(&project.path)
+        .join(".claude")
+        .join("skills")
+        .join(&skill.name);
+
+    if target_dir.exists() {
+        return Err(format!("Skill \"{}\" already exists in this project", skill.name));
+    }
+
+    let source = PathBuf::from(&skill.central_path);
+    sync_engine::sync_skill(&source, &target_dir, sync_engine::SyncMode::Copy)
+        .map_err(|e| e.to_string())?;
+
+    Ok(())
+}
+
+#[tauri::command]
+pub fn toggle_project_skill(
+    store: State<'_, Arc<SkillStore>>,
+    project_id: String,
+    skill_name: String,
+    enabled: bool,
+) -> Result<(), String> {
+    let record = store
+        .get_project_by_id(&project_id)
+        .map_err(|e| e.to_string())?
+        .ok_or_else(|| "Project not found".to_string())?;
+
+    let claude_dir = Path::new(&record.path).join(".claude");
+    let skills_dir = claude_dir.join("skills");
+    let disabled_dir = claude_dir.join("skills-disabled");
+
+    if enabled {
+        // Re-enable: move from skills-disabled/ to skills/
+        let from = disabled_dir.join(&skill_name);
+        let to = skills_dir.join(&skill_name);
+
+        if !from.is_dir() {
+            return Err("Skill directory not found in skills-disabled".to_string());
+        }
+        if to.exists() {
+            return Err("Skill already exists in skills directory".to_string());
+        }
+        std::fs::rename(&from, &to).map_err(|e| e.to_string())?;
+    } else {
+        // Disable: move from skills/ to skills-disabled/
+        let from = skills_dir.join(&skill_name);
+        let to = disabled_dir.join(&skill_name);
+
+        if !from.is_dir() {
+            return Err("Skill directory not found".to_string());
+        }
+        std::fs::create_dir_all(&disabled_dir).map_err(|e| e.to_string())?;
+        if to.exists() {
+            return Err("Skill already exists in skills-disabled directory".to_string());
+        }
+        std::fs::rename(&from, &to).map_err(|e| e.to_string())?;
+    }
+
+    Ok(())
+}
+
+#[tauri::command]
+pub fn delete_project_skill(
+    store: State<'_, Arc<SkillStore>>,
+    project_id: String,
+    skill_name: String,
+) -> Result<(), String> {
+    let record = store
+        .get_project_by_id(&project_id)
+        .map_err(|e| e.to_string())?
+        .ok_or_else(|| "Project not found".to_string())?;
+
+    let claude_dir = Path::new(&record.path).join(".claude");
+    let skills_dir = claude_dir.join("skills").join(&skill_name);
+    let disabled_dir = claude_dir.join("skills-disabled").join(&skill_name);
+
+    let target = if skills_dir.is_dir() {
+        skills_dir
+    } else if disabled_dir.is_dir() {
+        disabled_dir
+    } else {
+        return Err("Skill directory not found".to_string());
+    };
+
+    std::fs::remove_dir_all(&target).map_err(|e| e.to_string())?;
+    Ok(())
 }

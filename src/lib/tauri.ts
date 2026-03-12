@@ -90,9 +90,12 @@ export interface Project {
 
 export interface ProjectSkill {
   name: string;
+  dir_name: string;
   description: string | null;
   path: string;
   files: string[];
+  enabled: boolean;
+  in_center: boolean;
 }
 
 export interface ProjectSkillDocument {
@@ -291,3 +294,15 @@ export const getProjectSkills = (projectId: string) =>
 
 export const getProjectSkillDocument = (projectPath: string, skillName: string) =>
   invoke<ProjectSkillDocument>("get_project_skill_document", { projectPath, skillName });
+
+export const importProjectSkillToCenter = (projectId: string, skillName: string) =>
+  invoke<void>("import_project_skill_to_center", { projectId, skillName });
+
+export const exportSkillToProject = (skillId: string, projectId: string) =>
+  invoke<void>("export_skill_to_project", { skillId, projectId });
+
+export const toggleProjectSkill = (projectId: string, skillName: string, enabled: boolean) =>
+  invoke<void>("toggle_project_skill", { projectId, skillName, enabled });
+
+export const deleteProjectSkill = (projectId: string, skillName: string) =>
+  invoke<void>("delete_project_skill", { projectId, skillName });

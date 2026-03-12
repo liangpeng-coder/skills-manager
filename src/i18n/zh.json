@@ -342,6 +342,32 @@
     "selectAll": "全选",
     "deselectAll": "取消全选",
     "openInFinder": "打开目录",
-    "skillFiles": "文件"
+    "skillFiles": "文件",
+    "importToCenter": "导入到中心",
+    "importFromCenter": "从中心导入",
+    "importToCenterSuccess": "\"{{name}}\" 已导入到 Skills 中心",
+    "importFromCenterSuccess": "\"{{name}}\" 已导入到项目",
+    "alreadyInCenter": "已在中心",
+    "exportToProject": "导出到项目",
+    "enableSkill": "启用",
+    "disableSkill": "停用",
+    "enabled": "已启用",
+    "disabled": "已停用",
+    "skillEnabled": "\"{{name}}\" 已启用",
+    "skillDisabled": "\"{{name}}\" 已停用",
+    "searchPlaceholder": "搜索项目中的 Skills...",
+    "filters": {
+      "all": "全部",
+      "enabled": "已启用",
+      "disabled": "已停用"
+    },
+    "selectSkillToExport": "选择要导入到项目的 Skill",
+    "searchCenterSkills": "搜索中央仓库中的 Skills...",
+    "noSkillsToExport": "中央仓库中没有可导入的 Skill",
+    "alreadyExists": "已存在",
+    "import": "导入",
+    "deleteSkill": "删除 Skill",
+    "deleteSkillConfirm": "确定永久删除 Skill \"{{name}}\" 吗？此操作不可恢复。",
+    "skillDeleted": "\"{{name}}\" 已删除"
   }
 }

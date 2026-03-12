@@ -6,48 +6,64 @@ use super::skill_metadata;
 #[derive(Debug, Clone, Serialize)]
 pub struct ProjectSkillInfo {
     pub name: String,
+    pub dir_name: String,
     pub description: Option<String>,
     pub path: String,
     pub files: Vec<String>,
+    pub enabled: bool,
+    #[serde(default)]
+    pub in_center: bool,
 }
 
-/// Read all skills under `<project_path>/.claude/skills/`.
+/// Read all skills under `<project_path>/.claude/skills/` and `.claude/skills-disabled/`.
 pub fn read_project_skills(project_path: &Path) -> Vec<ProjectSkillInfo> {
-    let skills_dir = project_path.join(".claude").join("skills");
-    if !skills_dir.is_dir() {
-        return vec![];
-    }
+    let claude_dir = project_path.join(".claude");
+    let skills_dir = claude_dir.join("skills");
+    let disabled_dir = claude_dir.join("skills-disabled");
 
     let mut skills = Vec::new();
-    if let Ok(entries) = std::fs::read_dir(&skills_dir) {
+
+    read_skills_from_dir(&skills_dir, true, &mut skills);
+    read_skills_from_dir(&disabled_dir, false, &mut skills);
+
+    skills.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
+    skills
+}
+
+fn read_skills_from_dir(dir: &Path, enabled: bool, skills: &mut Vec<ProjectSkillInfo>) {
+    if !dir.is_dir() {
+        return;
+    }
+    if let Ok(entries) = std::fs::read_dir(dir) {
         for entry in entries.filter_map(|e| e.ok()) {
             let path = entry.path();
             if !path.is_dir() {
                 continue;
             }
+            let dir_name = path
+                .file_name()
+                .map(|n| n.to_string_lossy().to_string())
+                .unwrap_or_else(|| "unknown".to_string());
+
             let meta = skill_metadata::parse_skill_md(&path);
             let name = meta
                 .name
                 .filter(|n| !n.is_empty())
-                .unwrap_or_else(|| {
-                    path.file_name()
-                        .map(|n| n.to_string_lossy().to_string())
-                        .unwrap_or_else(|| "unknown".to_string())
-                });
+                .unwrap_or_else(|| dir_name.clone());
 
             let files = list_files(&path);
 
             skills.push(ProjectSkillInfo {
                 name,
+                dir_name: dir_name.clone(),
                 description: meta.description,
                 path: path.to_string_lossy().to_string(),
                 files,
+                enabled,
+                in_center: false,
             });
         }
     }
-
-    skills.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
-    skills
 }
 
 /// Scan a root directory for projects containing `.claude/skills/`.
