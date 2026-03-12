@@ -1,4 +1,4 @@
-use std::path::{Path, PathBuf};
+use std::path::{Component, Path, PathBuf};
 use std::sync::Arc;
 
 use serde::Serialize;
@@ -35,6 +35,53 @@ fn project_to_dto(rec: &ProjectRecord) -> ProjectDto {
         skill_count,
         created_at: rec.created_at,
         updated_at: rec.updated_at,
+    }
+}
+
+fn ensure_safe_skill_dir_name(skill_dir_name: &str) -> Result<(), String> {
+    if skill_dir_name.trim().is_empty() {
+        return Err("Invalid skill directory name".to_string());
+    }
+    let mut components = Path::new(skill_dir_name).components();
+    let only = components
+        .next()
+        .ok_or_else(|| "Invalid skill directory name".to_string())?;
+    if components.next().is_some() {
+        return Err("Invalid skill directory name".to_string());
+    }
+    if !matches!(only, Component::Normal(_)) {
+        return Err("Invalid skill directory name".to_string());
+    }
+    Ok(())
+}
+
+fn ensure_dir_within_root(path: &Path, root: &Path) -> Result<(), String> {
+    let canonical_path = std::fs::canonicalize(path).map_err(|e| e.to_string())?;
+    let canonical_root = std::fs::canonicalize(root).map_err(|e| e.to_string())?;
+    if !canonical_path.starts_with(&canonical_root) {
+        return Err("Invalid skill directory path".to_string());
+    }
+    Ok(())
+}
+
+fn slugify_skill_dir_name(name: &str) -> String {
+    let mut out = String::new();
+    let mut prev_dash = false;
+    for ch in name.chars().flat_map(|c| c.to_lowercase()) {
+        let valid = ch.is_ascii_alphanumeric() || ch == '-' || ch == '_' || ch == '.';
+        if valid {
+            out.push(ch);
+            prev_dash = false;
+        } else if !prev_dash {
+            out.push('-');
+            prev_dash = true;
+        }
+    }
+    let trimmed = out.trim_matches(|c| c == '-' || c == '_' || c == '.');
+    if trimmed.is_empty() {
+        "skill".to_string()
+    } else {
+        trimmed.to_string()
     }
 }
 
@@ -100,11 +147,24 @@ pub fn get_project_skills(
     // Check which project skills are already in the central library
     let all_managed = store.get_all_skills().unwrap_or_default();
     for skill in &mut skills {
+        let canonical_skill_path = std::fs::canonicalize(&skill.path).ok();
+        let skill_hash = skill.content_hash.as_deref();
         skill.in_center = all_managed.iter().any(|m| {
-            // Match by source_ref path
-            m.source_ref.as_deref() == Some(&skill.path)
-                // Or match by name (case-insensitive)
-                || m.name.to_lowercase() == skill.name.to_lowercase()
+            if skill_hash.is_some() && m.content_hash.as_deref() == skill_hash {
+                return true;
+            }
+            let Some(source_ref) = m.source_ref.as_deref() else {
+                return false;
+            };
+            if source_ref == skill.path {
+                return true;
+            }
+            if let Some(canonical_skill_path) = canonical_skill_path.as_ref() {
+                if let Ok(canonical_source_ref) = std::fs::canonicalize(source_ref) {
+                    return canonical_source_ref == *canonical_skill_path;
+                }
+            }
+            false
         });
     }
 
@@ -114,15 +174,21 @@ pub fn get_project_skills(
 #[tauri::command]
 pub fn get_project_skill_document(
     project_path: String,
-    skill_name: String,
+    skill_dir_name: String,
 ) -> Result<ProjectSkillDocumentDto, String> {
+    ensure_safe_skill_dir_name(&skill_dir_name)?;
+
     let claude_dir = Path::new(&project_path).join(".claude");
-    let skill_dir = claude_dir.join("skills").join(&skill_name);
+    let skills_root = claude_dir.join("skills");
+    let disabled_root = claude_dir.join("skills-disabled");
+    let skill_dir = skills_root.join(&skill_dir_name);
     let skill_dir = if skill_dir.is_dir() {
+        ensure_dir_within_root(&skill_dir, &skills_root)?;
         skill_dir
     } else {
-        let disabled = claude_dir.join("skills-disabled").join(&skill_name);
+        let disabled = disabled_root.join(&skill_dir_name);
         if disabled.is_dir() {
+            ensure_dir_within_root(&disabled, &disabled_root)?;
             disabled
         } else {
             return Err("Skill directory not found".to_string());
@@ -132,10 +198,10 @@ pub fn get_project_skill_document(
     let candidates = ["SKILL.md", "skill.md", "CLAUDE.md", "README.md"];
     for candidate in &candidates {
         let file_path = skill_dir.join(candidate);
-        if file_path.exists() {
+        if file_path.is_file() {
             let content = std::fs::read_to_string(&file_path).map_err(|e| e.to_string())?;
             return Ok(ProjectSkillDocumentDto {
-                skill_name,
+                skill_name: skill_dir_name,
                 filename: candidate.to_string(),
                 content,
             });
@@ -149,8 +215,10 @@ pub fn get_project_skill_document(
 pub fn import_project_skill_to_center(
     store: State<'_, Arc<SkillStore>>,
     project_id: String,
-    skill_name: String,
+    skill_dir_name: String,
 ) -> Result<(), String> {
+    ensure_safe_skill_dir_name(&skill_dir_name)?;
+
     let record = store
         .get_project_by_id(&project_id)
         .map_err(|e| e.to_string())?
@@ -159,7 +227,7 @@ pub fn import_project_skill_to_center(
     let skills = project_scanner::read_project_skills(Path::new(&record.path));
     let skill = skills
         .iter()
-        .find(|s| s.name == skill_name)
+        .find(|s| s.dir_name == skill_dir_name)
         .ok_or_else(|| "Skill not found in project".to_string())?;
 
     let source_path = PathBuf::from(&skill.path);
@@ -204,6 +272,11 @@ pub fn import_project_skill_to_center(
 }
 
 #[tauri::command]
+pub fn slugify_skill_names(names: Vec<String>) -> Vec<String> {
+    names.iter().map(|n| slugify_skill_dir_name(n)).collect()
+}
+
+#[tauri::command]
 pub fn export_skill_to_project(
     store: State<'_, Arc<SkillStore>>,
     skill_id: String,
@@ -219,12 +292,19 @@ pub fn export_skill_to_project(
         .map_err(|e| e.to_string())?
         .ok_or_else(|| "Skill not found".to_string())?;
 
-    let target_dir = Path::new(&project.path)
-        .join(".claude")
-        .join("skills")
-        .join(&skill.name);
+    let dir_name = slugify_skill_dir_name(&skill.name);
+    ensure_safe_skill_dir_name(&dir_name)?;
 
-    if target_dir.exists() {
+    let claude_dir = Path::new(&project.path).join(".claude");
+    let skills_root = claude_dir.join("skills");
+    let disabled_root = claude_dir.join("skills-disabled");
+    let target_dir = skills_root.join(&dir_name);
+
+    if target_dir.strip_prefix(&skills_root).is_err() {
+        return Err("Invalid skill directory path".to_string());
+    }
+
+    if target_dir.exists() || disabled_root.join(&dir_name).exists() {
         return Err(format!("Skill \"{}\" already exists in this project", skill.name));
     }
 
@@ -239,9 +319,11 @@ pub fn export_skill_to_project(
 pub fn toggle_project_skill(
     store: State<'_, Arc<SkillStore>>,
     project_id: String,
-    skill_name: String,
+    skill_dir_name: String,
     enabled: bool,
 ) -> Result<(), String> {
+    ensure_safe_skill_dir_name(&skill_dir_name)?;
+
     let record = store
         .get_project_by_id(&project_id)
         .map_err(|e| e.to_string())?
@@ -253,24 +335,26 @@ pub fn toggle_project_skill(
 
     if enabled {
         // Re-enable: move from skills-disabled/ to skills/
-        let from = disabled_dir.join(&skill_name);
-        let to = skills_dir.join(&skill_name);
+        let from = disabled_dir.join(&skill_dir_name);
+        let to = skills_dir.join(&skill_dir_name);
 
         if !from.is_dir() {
             return Err("Skill directory not found in skills-disabled".to_string());
         }
+        ensure_dir_within_root(&from, &disabled_dir)?;
         if to.exists() {
             return Err("Skill already exists in skills directory".to_string());
         }
         std::fs::rename(&from, &to).map_err(|e| e.to_string())?;
     } else {
         // Disable: move from skills/ to skills-disabled/
-        let from = skills_dir.join(&skill_name);
-        let to = disabled_dir.join(&skill_name);
+        let from = skills_dir.join(&skill_dir_name);
+        let to = disabled_dir.join(&skill_dir_name);
 
         if !from.is_dir() {
             return Err("Skill directory not found".to_string());
         }
+        ensure_dir_within_root(&from, &skills_dir)?;
         std::fs::create_dir_all(&disabled_dir).map_err(|e| e.to_string())?;
         if to.exists() {
             return Err("Skill already exists in skills-disabled directory".to_string());
@@ -285,25 +369,30 @@ pub fn toggle_project_skill(
 pub fn delete_project_skill(
     store: State<'_, Arc<SkillStore>>,
     project_id: String,
-    skill_name: String,
+    skill_dir_name: String,
 ) -> Result<(), String> {
+    ensure_safe_skill_dir_name(&skill_dir_name)?;
+
     let record = store
         .get_project_by_id(&project_id)
         .map_err(|e| e.to_string())?
         .ok_or_else(|| "Project not found".to_string())?;
 
     let claude_dir = Path::new(&record.path).join(".claude");
-    let skills_dir = claude_dir.join("skills").join(&skill_name);
-    let disabled_dir = claude_dir.join("skills-disabled").join(&skill_name);
+    let skills_root = claude_dir.join("skills");
+    let disabled_root = claude_dir.join("skills-disabled");
+    let skills_dir = skills_root.join(&skill_dir_name);
+    let disabled_dir = disabled_root.join(&skill_dir_name);
 
-    let target = if skills_dir.is_dir() {
-        skills_dir
+    let (target, target_root) = if skills_dir.is_dir() {
+        (skills_dir, skills_root)
     } else if disabled_dir.is_dir() {
-        disabled_dir
+        (disabled_dir, disabled_root)
     } else {
         return Err("Skill directory not found".to_string());
     };
 
+    ensure_dir_within_root(&target, &target_root)?;
     std::fs::remove_dir_all(&target).map_err(|e| e.to_string())?;
     Ok(())
 }

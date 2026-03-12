@@ -99,9 +99,9 @@ export function ProjectDetail() {
 
   const handleImportToCenter = async (skill: ProjectSkill) => {
     if (!id) return;
-    setImportingSkill(skill.name);
+    setImportingSkill(skill.dir_name);
     try {
-      await api.importProjectSkillToCenter(id, skill.name);
+      await api.importProjectSkillToCenter(id, skill.dir_name);
       toast.success(t("project.importToCenterSuccess", { name: skill.name }));
       await Promise.all([refreshManagedSkills(), refreshScenarios(), loadSkills()]);
     } catch (e: any) {
@@ -113,9 +113,9 @@ export function ProjectDetail() {
 
   const handleToggleSkill = async (skill: ProjectSkill) => {
     if (!id) return;
-    setTogglingSkill(skill.name);
+    setTogglingSkill(skill.dir_name);
     try {
-      await api.toggleProjectSkill(id, skill.name, !skill.enabled);
+      await api.toggleProjectSkill(id, skill.dir_name, !skill.enabled);
       if (skill.enabled) {
         toast.success(t("project.skillDisabled", { name: skill.name }));
       } else {
@@ -143,9 +143,13 @@ export function ProjectDetail() {
 
   const handleDeleteSkill = async () => {
     if (!id || !deleteTarget) return;
-    await api.deleteProjectSkill(id, deleteTarget.name);
-    toast.success(t("project.skillDeleted", { name: deleteTarget.name }));
-    await loadSkills();
+    try {
+      await api.deleteProjectSkill(id, deleteTarget.dir_name);
+      toast.success(t("project.skillDeleted", { name: deleteTarget.name }));
+      await loadSkills();
+    } catch (e: any) {
+      toast.error(e.toString());
+    }
   };
 
   if (!project) return null;
@@ -252,8 +256,8 @@ export function ProjectDetail() {
         >
           {filtered.map((skill) => {
 
-            const isImporting = importingSkill === skill.name;
-            const isToggling = togglingSkill === skill.name;
+            const isImporting = importingSkill === skill.dir_name;
+            const isToggling = togglingSkill === skill.dir_name;
 
             if (viewMode === "grid") {
               return (
@@ -458,7 +462,7 @@ export function ProjectDetail() {
       {showExportDialog && id && (
         <ExportFromCenterDialog
           managedSkills={managedSkills}
-          projectSkillNames={skills.map((s) => s.name.toLowerCase())}
+          projectSkillDirNames={skills.map((s) => s.dir_name.toLowerCase())}
           onExport={handleExportFromCenter}
           onClose={() => setShowExportDialog(false)}
         />
@@ -543,18 +547,52 @@ function ProjectSkillDetailPanel({
 
 function ExportFromCenterDialog({
   managedSkills,
-  projectSkillNames,
+  projectSkillDirNames,
   onExport,
   onClose,
 }: {
   managedSkills: ManagedSkill[];
-  projectSkillNames: string[];
+  projectSkillDirNames: string[];
   onExport: (skill: ManagedSkill) => Promise<void>;
   onClose: () => void;
 }) {
   const { t } = useTranslation();
   const [search, setSearch] = useState("");
   const [exporting, setExporting] = useState<string | null>(null);
+  const [dirNameMap, setDirNameMap] = useState<Record<string, string>>({});
+  const [dirNameMapError, setDirNameMapError] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    const loadDirNames = async () => {
+      const names = managedSkills.map((s) => s.name);
+      if (names.length === 0) {
+        if (!cancelled) {
+          setDirNameMap({});
+          setDirNameMapError(false);
+        }
+        return;
+      }
+      try {
+        const slugified = await api.slugifySkillNames(names);
+        if (cancelled) return;
+        const map: Record<string, string> = {};
+        managedSkills.forEach((s, i) => {
+          map[s.id] = slugified[i];
+        });
+        setDirNameMap(map);
+        setDirNameMapError(false);
+      } catch {
+        if (cancelled) return;
+        setDirNameMap({});
+        setDirNameMapError(true);
+      }
+    };
+    loadDirNames();
+    return () => {
+      cancelled = true;
+    };
+  }, [managedSkills]);
 
   const filtered = managedSkills.filter((skill) => {
     const matchesSearch =
@@ -610,7 +648,10 @@ function ExportFromCenterDialog({
           ) : (
             <div className="divide-y divide-border-subtle">
               {filtered.map((skill) => {
-                const alreadyExists = projectSkillNames.includes(skill.name.toLowerCase());
+                const exportDirName = dirNameMap[skill.id];
+                const alreadyExists = dirNameMapError
+                  ? true
+                  : (exportDirName ? projectSkillDirNames.includes(exportDirName) : false);
                 return (
                   <div
                     key={skill.id}

@@ -298,17 +298,20 @@ export const scanProjects = (root: string) =>
 export const getProjectSkills = (projectId: string) =>
   invoke<ProjectSkill[]>("get_project_skills", { projectId });
 
-export const getProjectSkillDocument = (projectPath: string, skillName: string) =>
-  invoke<ProjectSkillDocument>("get_project_skill_document", { projectPath, skillName });
+export const getProjectSkillDocument = (projectPath: string, skillDirName: string) =>
+  invoke<ProjectSkillDocument>("get_project_skill_document", { projectPath, skillDirName });
 
-export const importProjectSkillToCenter = (projectId: string, skillName: string) =>
-  invoke<void>("import_project_skill_to_center", { projectId, skillName });
+export const importProjectSkillToCenter = (projectId: string, skillDirName: string) =>
+  invoke<void>("import_project_skill_to_center", { projectId, skillDirName });
 
 export const exportSkillToProject = (skillId: string, projectId: string) =>
   invoke<void>("export_skill_to_project", { skillId, projectId });
 
-export const toggleProjectSkill = (projectId: string, skillName: string, enabled: boolean) =>
-  invoke<void>("toggle_project_skill", { projectId, skillName, enabled });
+export const toggleProjectSkill = (projectId: string, skillDirName: string, enabled: boolean) =>
+  invoke<void>("toggle_project_skill", { projectId, skillDirName, enabled });
 
-export const deleteProjectSkill = (projectId: string, skillName: string) =>
-  invoke<void>("delete_project_skill", { projectId, skillName });
+export const deleteProjectSkill = (projectId: string, skillDirName: string) =>
+  invoke<void>("delete_project_skill", { projectId, skillDirName });
+
+export const slugifySkillNames = (names: string[]) =>
+  invoke<string[]>("slugify_skill_names", { names });

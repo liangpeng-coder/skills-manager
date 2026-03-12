@@ -1,7 +1,7 @@
 use serde::Serialize;
 use std::path::Path;
 
-use super::skill_metadata;
+use super::{content_hash, skill_metadata};
 
 #[derive(Debug, Clone, Serialize)]
 pub struct ProjectSkillInfo {
@@ -13,6 +13,8 @@ pub struct ProjectSkillInfo {
     pub enabled: bool,
     #[serde(default)]
     pub in_center: bool,
+    #[serde(skip_serializing)]
+    pub content_hash: Option<String>,
 }
 
 /// Read all skills under `<project_path>/.claude/skills/` and `.claude/skills-disabled/`.
@@ -61,6 +63,7 @@ fn read_skills_from_dir(dir: &Path, enabled: bool, skills: &mut Vec<ProjectSkill
                 files,
                 enabled,
                 in_center: false,
+                content_hash: content_hash::hash_directory(&path).ok(),
             });
         }
     }

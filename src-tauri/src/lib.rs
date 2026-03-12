@@ -83,6 +83,7 @@ pub fn run() {
             commands::projects::export_skill_to_project,
             commands::projects::toggle_project_skill,
             commands::projects::delete_project_skill,
+            commands::projects::slugify_skill_names,
             // Scenarios
             commands::scenarios::get_scenarios,
             commands::scenarios::get_active_scenario,
