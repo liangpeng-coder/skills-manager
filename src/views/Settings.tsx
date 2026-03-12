@@ -48,7 +48,6 @@ export function Settings() {
   // Git backup state
   const [gitStatus, setGitStatus] = useState<GitBackupStatus | null>(null);
   const [gitRemoteInput, setGitRemoteInput] = useState("");
-  const [gitCommitMsg, setGitCommitMsg] = useState("");
   const [gitLoading, setGitLoading] = useState<string | null>(null); // "start" | "sync" | "remote"
   const [gitAdvancedOpen, setGitAdvancedOpen] = useState(false);
   const GITHUB_URL = "https://github.com/xingkongliang/skills-manager";
@@ -248,7 +247,7 @@ export function Settings() {
 
       let committed = false;
       if (status.has_changes) {
-        const msg = gitCommitMsg.trim() || t("settings.gitCommitPlaceholder");
+        const msg = t("settings.gitCommitPlaceholder");
         await api.gitBackupCommit(msg);
         committed = true;
       }
@@ -256,7 +255,6 @@ export function Settings() {
       if (committed || status.ahead > 0) {
         await api.gitBackupPush();
         toast.success(t("settings.gitSyncSuccess"));
-        if (committed) setGitCommitMsg("");
       } else {
         toast.success(t("settings.gitUpToDate"));
       }
@@ -580,32 +578,6 @@ export function Settings() {
                     </button>
                   </div>
                 </div>
-
-                {gitStatus?.is_repo && (
-                  <div className="grid grid-cols-2 gap-2 text-[13px]">
-                    <div className="text-muted">{t("settings.gitBranch")}: <span className="text-secondary">{gitStatus.branch || "main"}</span></div>
-                    <div className="text-muted">{t("settings.gitAhead", { count: gitStatus.ahead })} / {t("settings.gitBehind", { count: gitStatus.behind })}</div>
-                  </div>
-                )}
-
-                {gitStatus?.is_repo && gitStatus.last_commit && (
-                  <div className="text-[13px] text-muted">
-                    {t("settings.gitLastCommit")}: <span className="text-tertiary">{gitStatus.last_commit}</span>
-                  </div>
-                )}
-
-                {gitStatus?.is_repo && (
-                  <div>
-                    <h3 className="text-[13px] text-secondary font-medium mb-1.5">{t("settings.gitCommitMessage")}</h3>
-                    <input
-                      type="text"
-                      value={gitCommitMsg}
-                      onChange={(e) => setGitCommitMsg(e.target.value)}
-                      placeholder={t("settings.gitCommitPlaceholder")}
-                      className="w-full h-8 rounded-[4px] border border-border-subtle bg-background px-2.5 text-[13px] text-secondary outline-none transition-colors focus:border-border"
-                    />
-                  </div>
-                )}
               </div>
             )}
           </div>
