@@ -234,6 +234,8 @@ export interface GitBackupStatus {
   behind: number;
   last_commit: string | null;
   last_commit_time: string | null;
+  current_snapshot_tag: string | null;
+  restored_from_tag: string | null;
 }
 
 export interface GitBackupVersion {

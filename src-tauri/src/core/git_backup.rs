@@ -33,6 +33,10 @@ pub struct GitBackupStatus {
     pub last_commit: Option<String>,
     /// Last commit timestamp (ISO 8601)
     pub last_commit_time: Option<String>,
+    /// Snapshot tag that points at current HEAD (if any)
+    pub current_snapshot_tag: Option<String>,
+    /// Snapshot tag restored most recently (when HEAD is a restore commit)
+    pub restored_from_tag: Option<String>,
 }
 
 #[derive(Debug, Clone, serde::Serialize)]
@@ -59,6 +63,8 @@ pub fn get_status(skills_dir: &Path) -> Result<GitBackupStatus> {
             behind: 0,
             last_commit: None,
             last_commit_time: None,
+            current_snapshot_tag: None,
+            restored_from_tag: None,
         });
     }
 
@@ -79,6 +85,23 @@ pub fn get_status(skills_dir: &Path) -> Result<GitBackupStatus> {
     let last_commit_time =
         run_git(skills_dir, &["log", "-1", "--format=%cI"]).ok();
 
+    let current_snapshot_tag = run_git(
+        skills_dir,
+        &["tag", "--points-at", "HEAD", "--list", "sm-v-*", "--sort=-creatordate"],
+    )
+    .ok()
+    .and_then(|output| {
+        output
+            .lines()
+            .map(str::trim)
+            .find(|line| !line.is_empty())
+            .map(|line| line.to_string())
+    });
+
+    let restored_from_tag = last_commit
+        .as_deref()
+        .and_then(parse_restored_from_tag_message);
+
     Ok(GitBackupStatus {
         is_repo: true,
         remote_url,
@@ -88,6 +111,8 @@ pub fn get_status(skills_dir: &Path) -> Result<GitBackupStatus> {
         behind,
         last_commit,
         last_commit_time,
+        current_snapshot_tag,
+        restored_from_tag,
     })
 }
 
@@ -502,5 +527,15 @@ fn redact_url(url: &str) -> String {
         masked
     } else {
         url.to_string()
+    }
+}
+
+fn parse_restored_from_tag_message(message: &str) -> Option<String> {
+    let prefix = "restore: switch skills library to ";
+    let tag = message.strip_prefix(prefix)?.trim();
+    if tag.starts_with("sm-v-") {
+        Some(tag.to_string())
+    } else {
+        None
     }
 }

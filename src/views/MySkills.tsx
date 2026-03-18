@@ -81,10 +81,6 @@ export function MySkills() {
   const installedTools = tools.filter((tool) => tool.installed);
   const activeScenarioName = activeScenario?.name || t("mySkills.currentScenarioFallback");
 
-  const enabledCount = activeScenario
-    ? skills.filter((skill) => skill.scenario_ids.includes(activeScenario.id)).length
-    : 0;
-
   const refreshAllTags = async () => {
     try {
       const tags = await api.getAllTags();
@@ -562,6 +558,21 @@ export function MySkills() {
     return d.toLocaleString();
   };
 
+  const renderCurrentVersionText = () => {
+    if (!gitStatus?.is_repo) return null;
+    if (gitStatus.current_snapshot_tag) {
+      return t("mySkills.gitCurrentVersionSnapshot", {
+        tag: displaySnapshotLabel(gitStatus.current_snapshot_tag),
+      });
+    }
+    if (gitStatus.restored_from_tag) {
+      return t("mySkills.gitCurrentVersionRestored", {
+        tag: displaySnapshotLabel(gitStatus.restored_from_tag),
+      });
+    }
+    return t("mySkills.gitCurrentVersionUnknown");
+  };
+
   const refreshLabel = (skill: ManagedSkill) =>
     skill.source_type === "local" || skill.source_type === "import"
       ? t("mySkills.updateActions.reimport")
@@ -591,18 +602,13 @@ export function MySkills() {
 
   return (
     <div className="app-page">
-      <div className="app-page-header pr-2">
-        <h1 className="app-page-title flex items-center gap-2.5">
+      <div className="app-page-header pr-2 pb-1">
+        <h1 className="app-page-title flex items-center gap-2">
           {t("mySkills.title")}
           <span className="app-badge">
             {skills.length}
           </span>
         </h1>
-        <p className="app-page-subtitle">
-          {activeScenario
-            ? t("mySkills.subtitle", { scenario: activeScenario.name, count: enabledCount })
-            : t("mySkills.noScenario")}
-        </p>
       </div>
 
       <div className="app-toolbar">
@@ -716,7 +722,7 @@ export function MySkills() {
         </div>
       </div>
 
-      <div className="flex flex-wrap items-center gap-1 px-1 -mt-4 -mb-4">
+      <div className="flex flex-wrap items-center gap-1 px-1 -mt-2 -mb-3">
         {(["local", "import", "git", "skillssh"] as const).map((src) => (
           <button
             key={src}
@@ -777,7 +783,10 @@ export function MySkills() {
       {gitVersionsOpen && gitStatus?.is_repo && (
         <div className="app-panel -mt-2 mb-2 p-3">
           <div className="mb-2 flex items-center justify-between">
-            <h3 className="text-[13px] font-semibold text-secondary">{t("mySkills.gitVersionHistory")}</h3>
+            <div className="min-w-0">
+              <h3 className="text-[13px] font-semibold text-secondary">{t("mySkills.gitVersionHistory")}</h3>
+              <div className="truncate text-[11px] text-faint">{renderCurrentVersionText()}</div>
+            </div>
             <button
               onClick={refreshGitVersions}
               disabled={gitVersionsLoading || !!gitLoading}
