@@ -328,7 +328,19 @@
     "gitErrorNetwork": "Network connection failed. Check your network and remote URL.",
     "gitErrorConflict": "Sync conflict detected. Pull and resolve conflicts first.",
     "gitErrorNotRepo": "Git repository not found. Start backup first.",
-    "gitErrorGeneric": "Git operation failed. Please check Advanced Settings and try again."
+    "gitErrorGeneric": "Git operation failed. Please check Advanced Settings and try again.",
+    "closeAction": "Close Behavior",
+    "closeActionDesc": "What happens when you click the window close button.",
+    "closeAction_ask": "Ask each time",
+    "closeAction_hide": "Hide to tray",
+    "closeAction_close": "Quit app"
+  },
+  "closeAction": {
+    "title": "Close or hide?",
+    "message": "What should happen when you click the close button?",
+    "close": "Quit app",
+    "hide": "Hide to tray",
+    "remember": "Remember my choice and don't ask again"
   },
   "common": {
     "loading": "Loading...",

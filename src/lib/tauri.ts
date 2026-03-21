@@ -210,6 +210,10 @@ export const setSettings = (key: string, value: string) =>
 export const getCentralRepoPath = () =>
   invoke<string>("get_central_repo_path");
 
+export const appExit = () => invoke<void>("app_exit");
+
+export const hideToTray = () => invoke<void>("hide_to_tray");
+
 export const openCentralRepoFolder = () =>
   invoke<void>("open_central_repo_folder");
 

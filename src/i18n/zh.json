@@ -328,7 +328,19 @@
     "gitErrorNetwork": "网络连接失败，请检查网络和远程仓库地址。",
     "gitErrorConflict": "检测到同步冲突，请先拉取并解决冲突。",
     "gitErrorNotRepo": "未检测到 Git 仓库，请先开始备份。",
-    "gitErrorGeneric": "Git 操作失败，请检查高级设置后重试。"
+    "gitErrorGeneric": "Git 操作失败，请检查高级设置后重试。",
+    "closeAction": "关闭行为",
+    "closeActionDesc": "点击窗口关闭按钮时的默认动作。",
+    "closeAction_ask": "每次询问",
+    "closeAction_hide": "隐藏到托盘",
+    "closeAction_close": "退出应用"
+  },
+  "closeAction": {
+    "title": "关闭还是隐藏？",
+    "message": "点击关闭按钮时，你希望应用如何响应？",
+    "close": "退出应用",
+    "hide": "隐藏到托盘",
+    "remember": "记住我的选择，下次不再提示"
   },
   "common": {
     "loading": "加载中...",

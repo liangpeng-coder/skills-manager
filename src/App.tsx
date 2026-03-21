@@ -3,6 +3,7 @@ import { Toaster } from "sonner";
 import { AppProvider } from "./context/AppContext";
 import { ThemeProvider, useThemeContext } from "./context/ThemeContext";
 import { HelpDialog } from "./components/HelpDialog";
+import { CloseActionGuard } from "./components/CloseActionGuard";
 import { Layout } from "./components/Layout";
 import { Dashboard } from "./views/Dashboard";
 import { MySkills } from "./views/MySkills";
@@ -42,6 +43,7 @@ function App() {
             </Route>
           </Routes>
           <HelpDialog />
+          <CloseActionGuard />
         </BrowserRouter>
         <ThemedToaster />
       </AppProvider>

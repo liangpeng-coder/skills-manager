@@ -111,6 +111,16 @@ pub async fn check_app_update(app: tauri::AppHandle) -> Result<AppUpdateInfo, Ap
     .await?
 }
 
+#[tauri::command]
+pub fn app_exit(app: tauri::AppHandle) {
+    app.exit(0);
+}
+
+#[tauri::command]
+pub async fn hide_to_tray(window: tauri::WebviewWindow) -> Result<(), AppError> {
+    window.hide().map_err(|e| AppError::io(e.to_string()))
+}
+
 fn version_gt(a: &str, b: &str) -> bool {
     // Prefer strict SemVer comparison (supports pre-release/build metadata).
     if let (Ok(a_ver), Ok(b_ver)) = (Version::parse(a), Version::parse(b)) {

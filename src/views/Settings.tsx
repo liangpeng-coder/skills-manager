@@ -36,6 +36,7 @@ export function Settings() {
   const { theme, setTheme } = useThemeContext();
   const [syncMode, setSyncMode] = useState("symlink");
   const [defaultScenario, setDefaultScenario] = useState("");
+  const [closeAction, setCloseAction] = useState("");
   const [refreshing, setRefreshing] = useState(false);
   const [openingRepo, setOpeningRepo] = useState(false);
   const [openingGithub, setOpeningGithub] = useState(false);
@@ -50,6 +51,7 @@ export function Settings() {
   useEffect(() => {
     api.getSettings("sync_mode").then((v) => { if (v) setSyncMode(v); });
     api.getSettings("default_scenario").then((v) => { if (v) setDefaultScenario(v); });
+    api.getSettings("close_action").then((v) => { setCloseAction(v ?? ""); });
     api.getCentralRepoPath().then(setCentralRepoPath).catch(() => {});
 
     (async () => {
@@ -84,6 +86,11 @@ export function Settings() {
   const handleDefaultScenarioChange = async (id: string) => {
     setDefaultScenario(id);
     await api.setSettings("default_scenario", id);
+  };
+
+  const handleCloseActionChange = async (action: string) => {
+    setCloseAction(action);
+    await api.setSettings("close_action", action);
   };
 
   const handleLanguageChange = (lng: string) => {
@@ -365,6 +372,28 @@ export function Settings() {
                   <option value="zh">简体中文 (zh-CN)</option>
                   <option value="en">English (en-US)</option>
                 </select>
+              </div>
+            </div>
+
+            {/* Close action */}
+            <div className="px-4 py-3 flex items-center justify-between gap-4">
+              <div>
+                <h3 className="text-[13px] text-secondary font-medium mb-0.5">{t("settings.closeAction")}</h3>
+                <p className="text-[13px] text-muted">{t("settings.closeActionDesc")}</p>
+              </div>
+              <div className="flex bg-background border border-border-subtle rounded-[4px] p-px shrink-0">
+                {(["", "hide", "close"] as const).map((val) => (
+                  <button
+                    key={val}
+                    onClick={() => handleCloseActionChange(val)}
+                    className={cn(
+                      segmentedButtonClass,
+                      closeAction === val ? "bg-surface-active text-secondary" : "text-muted hover:text-tertiary"
+                    )}
+                  >
+                    {t(`settings.closeAction_${val || "ask"}`)}
+                  </button>
+                ))}
               </div>
             </div>
           </div>
