@@ -80,8 +80,13 @@ impl PreparedSource {
 
 pub fn install_from_local(source: &Path, name: Option<&str>) -> Result<InstallResult> {
     let skill_name = resolve_local_skill_name(source, name)?;
-    let dest = central_repo::skills_dir().join(&skill_name);
-    install_from_local_to_destination(source, Some(&skill_name), &dest)
+    let skills_dir = central_repo::skills_dir();
+    let dest = unique_skill_dest(&skills_dir, &skill_name, source);
+    let final_name = dest
+        .file_name()
+        .map(|n| n.to_string_lossy().to_string())
+        .unwrap_or_else(|| skill_name.clone());
+    install_from_local_to_destination(source, Some(&final_name), &dest)
 }
 
 pub fn install_from_local_to_destination(
@@ -174,6 +179,37 @@ fn safe_extract(archive: &mut zip::ZipArchive<std::fs::File>, dest: &Path) -> Re
     Ok(())
 }
 
+/// Return a unique destination directory for a skill inside `parent`.
+///
+/// If `parent/name` does not exist, returns it directly.  If it already exists
+/// and its canonical path matches the source (i.e. this is an update/reinstall
+/// of the same skill), returns it as-is so the existing directory gets replaced.
+/// Otherwise appends `-2`, `-3`, … until a free slot is found, preventing
+/// accidental overwrites when different skill names collapse to the same
+/// sanitized directory name.
+fn unique_skill_dest(parent: &Path, name: &str, source: &Path) -> PathBuf {
+    let candidate = parent.join(name);
+    if !candidate.exists() {
+        return candidate;
+    }
+
+    // Same source ⇒ intentional reinstall/update — reuse the directory.
+    if let (Ok(a), Ok(b)) = (candidate.canonicalize(), source.canonicalize()) {
+        if a == b {
+            return candidate;
+        }
+    }
+
+    // Collision with a different skill — disambiguate with a numeric suffix.
+    for i in 2u32.. {
+        let suffixed = parent.join(format!("{}-{}", name, i));
+        if !suffixed.exists() {
+            return suffixed;
+        }
+    }
+    candidate // unreachable in practice
+}
+
 fn copy_skill_dir(src: &Path, dst: &Path) -> Result<()> {
     std::fs::create_dir_all(dst)?;
     for entry in std::fs::read_dir(src)? {
@@ -199,4 +235,54 @@ fn copy_skill_dir(src: &Path, dst: &Path) -> Result<()> {
         }
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tempfile::tempdir;
+
+    #[test]
+    fn unique_dest_returns_base_when_free() {
+        let tmp = tempdir().unwrap();
+        let source = tmp.path().join("src-skill");
+        std::fs::create_dir_all(&source).unwrap();
+        let dest = unique_skill_dest(tmp.path(), "my-skill", &source);
+        assert_eq!(dest, tmp.path().join("my-skill"));
+    }
+
+    #[test]
+    fn unique_dest_reuses_dir_for_same_source() {
+        let tmp = tempdir().unwrap();
+        // source IS the existing dir (reinstall scenario)
+        let existing = tmp.path().join("my-skill");
+        std::fs::create_dir_all(&existing).unwrap();
+        let dest = unique_skill_dest(tmp.path(), "my-skill", &existing);
+        assert_eq!(dest, existing);
+    }
+
+    #[test]
+    fn unique_dest_disambiguates_on_collision() {
+        let tmp = tempdir().unwrap();
+        // Create the base dir (occupied by a different skill)
+        std::fs::create_dir_all(tmp.path().join("a-b")).unwrap();
+        // A different source directory
+        let other_source = tmp.path().join("other");
+        std::fs::create_dir_all(&other_source).unwrap();
+
+        let dest = unique_skill_dest(tmp.path(), "a-b", &other_source);
+        assert_eq!(dest, tmp.path().join("a-b-2"));
+    }
+
+    #[test]
+    fn unique_dest_skips_taken_suffixes() {
+        let tmp = tempdir().unwrap();
+        std::fs::create_dir_all(tmp.path().join("a-b")).unwrap();
+        std::fs::create_dir_all(tmp.path().join("a-b-2")).unwrap();
+        let other = tmp.path().join("other");
+        std::fs::create_dir_all(&other).unwrap();
+
+        let dest = unique_skill_dest(tmp.path(), "a-b", &other);
+        assert_eq!(dest, tmp.path().join("a-b-3"));
+    }
 }
