@@ -153,7 +153,13 @@
       "noTags": "No tags",
       "tagAdded": "Tag added",
       "tagsUpdated": "Tags updated"
-    }
+    },
+    "selectMode": "Select",
+    "selectedCount": "{{count}} selected",
+    "selectHint": "Click skills to select",
+    "deleteSelected": "Delete {{count}}",
+    "batchDeleteConfirm": "Delete {{count}} selected skills permanently? This removes their central library files, scenario links, and synced agent targets.",
+    "batchDeleted": "{{count}} skills deleted"
   },
   "install": {
     "title": "Install Skills",

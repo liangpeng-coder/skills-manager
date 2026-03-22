@@ -18,6 +18,8 @@ import {
   Loader2,
   X,
   Plus,
+  SquareCheck,
+  Square,
 } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
@@ -77,6 +79,9 @@ export function MySkills() {
   const [tagEditSkillId, setTagEditSkillId] = useState<string | null>(null);
   const [tagInput, setTagInput] = useState("");
   const tagInputRef = useRef<HTMLInputElement>(null);
+  const [isMultiSelect, setIsMultiSelect] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [batchDeleteConfirm, setBatchDeleteConfirm] = useState(false);
 
   const installedTools = tools.filter((tool) => tool.installed && tool.enabled);
   const activeScenarioName = activeScenario?.name || t("mySkills.currentScenarioFallback");
@@ -312,6 +317,28 @@ export function MySkills() {
     if (selectedSkill?.id === deleteTarget.id) closeSkillDetail();
     toast.success(`${deleteTarget.name} ${t("mySkills.deleted")}`);
     setDeleteTarget(null);
+    await Promise.all([refreshManagedSkills(), refreshScenarios()]);
+  };
+
+  const toggleSelect = (id: string) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const handleBatchDelete = async () => {
+    const ids = Array.from(selectedIds);
+    for (const id of ids) {
+      await api.deleteManagedSkill(id);
+      if (selectedSkill?.id === id) closeSkillDetail();
+    }
+    toast.success(t("mySkills.batchDeleted", { count: ids.length }));
+    setSelectedIds(new Set());
+    setIsMultiSelect(false);
+    setBatchDeleteConfirm(false);
     await Promise.all([refreshManagedSkills(), refreshScenarios()]);
   };
 
@@ -727,6 +754,16 @@ export function MySkills() {
           >
             <List className="h-4 w-4" />
           </button>
+          <button
+            onClick={() => { setIsMultiSelect((v) => !v); setSelectedIds(new Set()); }}
+            className={cn(
+              "rounded-md p-2 transition-colors outline-none",
+              isMultiSelect ? "bg-surface-active text-secondary" : "text-muted hover:text-tertiary"
+            )}
+            title={isMultiSelect ? t("mySkills.cancelSelect") : t("mySkills.selectMode")}
+          >
+            <SquareCheck className="h-4 w-4" />
+          </button>
         </div>
       </div>
 
@@ -787,6 +824,31 @@ export function MySkills() {
           </>
         )}
       </div>
+
+      {isMultiSelect && (
+        <div className="flex items-center gap-2 px-1 py-1.5">
+          <span className="text-[13px] text-muted">
+            {selectedIds.size > 0
+              ? t("mySkills.selectedCount", { count: selectedIds.size })
+              : t("mySkills.selectHint")}
+          </span>
+          {selectedIds.size > 0 && (
+            <button
+              onClick={() => setBatchDeleteConfirm(true)}
+              className="inline-flex items-center gap-1.5 rounded-md bg-red-600/90 px-2.5 py-1 text-[13px] font-medium text-white hover:bg-red-500 transition-colors"
+            >
+              <Trash2 className="h-3.5 w-3.5" />
+              {t("mySkills.deleteSelected", { count: selectedIds.size })}
+            </button>
+          )}
+          <button
+            onClick={() => { setIsMultiSelect(false); setSelectedIds(new Set()); }}
+            className="rounded-md px-2.5 py-1 text-[13px] font-medium text-muted hover:text-secondary hover:bg-surface-hover transition-colors"
+          >
+            {t("common.cancel")}
+          </button>
+        </div>
+      )}
 
       {gitVersionsOpen && gitStatus?.is_repo && (
         <div className="app-panel -mt-2 mb-2 p-3">
@@ -870,10 +932,13 @@ export function MySkills() {
                   key={skill.id}
                   className={cn(
                     "app-panel group relative flex flex-col overflow-hidden transition-all hover:border-border hover:bg-surface-hover",
-                    enabledInScenario && "border-l-2 border-l-accent"
+                    enabledInScenario && "border-l-2 border-l-accent",
+                    isMultiSelect && "cursor-pointer",
+                    isMultiSelect && selectedIds.has(skill.id) && "ring-1 ring-accent border-accent/40"
                   )}
+                  onClick={isMultiSelect ? () => toggleSelect(skill.id) : undefined}
                 >
-                  <div className="absolute right-3 top-3 flex items-center gap-1 opacity-0 transition-all group-hover:opacity-100">
+                  <div className={cn("absolute right-3 top-3 flex items-center gap-1 opacity-0 transition-all", !isMultiSelect && "group-hover:opacity-100")}>
                     <button
                       onClick={() => handleCheckUpdate(skill)}
                       disabled={checkingSkillId === skill.id}
@@ -902,14 +967,18 @@ export function MySkills() {
                   </div>
 
                   <div className="flex items-center gap-2.5 px-3.5 pt-3 pb-1.5">
-                    {isSynced ? (
+                    {isMultiSelect ? (
+                      selectedIds.has(skill.id)
+                        ? <SquareCheck className="h-3.5 w-3.5 shrink-0 text-accent" />
+                        : <Square className="h-3.5 w-3.5 shrink-0 text-faint" />
+                    ) : isSynced ? (
                       <CheckCircle2 className="h-3.5 w-3.5 shrink-0 text-emerald-500" />
                     ) : (
                       <Circle className="h-3.5 w-3.5 shrink-0 text-faint" />
                     )}
                     <h3
                       className="flex-1 cursor-pointer truncate text-[14px] font-semibold text-primary hover:text-accent-light"
-                      onClick={() => openSkillDetailById(skill.id)}
+                      onClick={isMultiSelect ? undefined : () => openSkillDetailById(skill.id)}
                       title={skill.name}
                     >
                       {skill.name}
@@ -1034,10 +1103,17 @@ export function MySkills() {
                 key={skill.id}
                 className={cn(
                   "app-panel group flex items-center gap-3.5 rounded-xl border-transparent px-3.5 py-3 transition-all hover:border-border hover:bg-surface-hover",
-                  enabledInScenario && "border-l-2 border-l-accent"
+                  enabledInScenario && "border-l-2 border-l-accent",
+                  isMultiSelect && "cursor-pointer",
+                  isMultiSelect && selectedIds.has(skill.id) && "ring-1 ring-accent border-accent/40"
                 )}
+                onClick={isMultiSelect ? () => toggleSelect(skill.id) : undefined}
               >
-                {isSynced ? (
+                {isMultiSelect ? (
+                  selectedIds.has(skill.id)
+                    ? <SquareCheck className="h-3.5 w-3.5 shrink-0 text-accent" />
+                    : <Square className="h-3.5 w-3.5 shrink-0 text-faint" />
+                ) : isSynced ? (
                   <CheckCircle2 className="h-3.5 w-3.5 shrink-0 text-emerald-500" />
                 ) : (
                   <Circle className="h-3.5 w-3.5 shrink-0 text-faint" />
@@ -1045,7 +1121,7 @@ export function MySkills() {
 
                 <h3
                   className="w-[180px] shrink-0 truncate cursor-pointer text-[14px] font-semibold text-secondary hover:text-primary"
-                  onClick={() => openSkillDetailById(skill.id)}
+                  onClick={isMultiSelect ? undefined : () => openSkillDetailById(skill.id)}
                   title={skill.name}
                 >
                   {skill.name}
@@ -1078,7 +1154,7 @@ export function MySkills() {
                   )}
                 </div>
 
-                <div className="flex shrink-0 items-center gap-1 opacity-0 transition-opacity group-hover:opacity-100">
+                <div className={cn("flex shrink-0 items-center gap-1 opacity-0 transition-opacity", !isMultiSelect && "group-hover:opacity-100")}>
                   <button
                     onClick={() => handleToggleScenario(skill)}
                     disabled={!activeScenario}
@@ -1136,6 +1212,12 @@ export function MySkills() {
         message={t("mySkills.deleteConfirm", { name: deleteTarget?.name || "" })}
         onClose={() => setDeleteTarget(null)}
         onConfirm={handleDeleteManagedSkill}
+      />
+      <ConfirmDialog
+        open={batchDeleteConfirm}
+        message={t("mySkills.batchDeleteConfirm", { count: selectedIds.size })}
+        onClose={() => setBatchDeleteConfirm(false)}
+        onConfirm={handleBatchDelete}
       />
       <ConfirmDialog
         open={restoreVersionTag !== null}
