@@ -478,6 +478,10 @@ export function InstallSkills() {
     [marketSkills]
   );
 
+  useEffect(() => {
+    sourceMeasureRefs.current = sourceMeasureRefs.current.slice(0, sourceOptions.length);
+  }, [sourceOptions.length]);
+
   const computeVisibleCount = useCallback(() => {
     const container = filterContainerRef.current;
     if (!container || sourceOptions.length === 0) {
@@ -520,6 +524,22 @@ export function InstallSkills() {
     observer.observe(container);
     return () => observer.disconnect();
   }, [computeVisibleCount]);
+
+  const overflowSources = useMemo(
+    () => sourceOptions.slice(visibleSourceCount),
+    [sourceOptions, visibleSourceCount]
+  );
+
+  const filteredOverflowSources = useMemo(
+    () =>
+      sourceSearch
+        ? overflowSources.filter((s) =>
+            s.toLowerCase().includes(sourceSearch.toLowerCase())
+          )
+        : overflowSources,
+    [overflowSources, sourceSearch]
+  );
+
   const filteredMarketSkills = useMemo(() => {
     const filtered = marketSourceFilter === "all"
       ? marketSkills
@@ -654,7 +674,7 @@ export function InstallSkills() {
                   </span>
                   <div ref={filterContainerRef} className="relative min-w-0 flex-1">
                     {/* Hidden measurement layer — never visible, keeps all pills in DOM for width queries */}
-                    <div className="pointer-events-none invisible absolute left-0 top-0 flex items-center gap-1.5" aria-hidden="true">
+                    <div className="pointer-events-none invisible absolute left-0 top-0 flex h-0 items-center gap-1.5 overflow-hidden" aria-hidden="true">
                       <button
                         ref={allBtnMeasureRef}
                         tabIndex={-1}
@@ -750,13 +770,10 @@ export function InstallSkills() {
                                       setSourceFocusedIndex(-1);
                                     }}
                                     onKeyDown={(e) => {
-                                      const filtered = sourceOptions.filter((s) =>
-                                        s.toLowerCase().includes(sourceSearch.toLowerCase())
-                                      );
                                       if (e.key === "ArrowDown") {
                                         e.preventDefault();
                                         setSourceFocusedIndex((i) => {
-                                          const next = Math.min(i + 1, filtered.length - 1);
+                                          const next = Math.min(i + 1, filteredOverflowSources.length - 1);
                                           requestAnimationFrame(() => {
                                             sourceListRef.current
                                               ?.children[next]
@@ -775,8 +792,8 @@ export function InstallSkills() {
                                           });
                                           return next;
                                         });
-                                      } else if (e.key === "Enter") {
-                                        const target = filtered[sourceFocusedIndex] ?? filtered[0];
+                                      } else if (e.key === "Enter" && sourceFocusedIndex >= 0) {
+                                        const target = filteredOverflowSources[sourceFocusedIndex];
                                         if (target) {
                                           setMarketSourceFilter(target);
                                           setSourceOverflowOpen(false);
@@ -788,7 +805,7 @@ export function InstallSkills() {
                                         setSourceSearch("");
                                         setSourceFocusedIndex(-1);
                                       }
-                                    }}
+                                    }
                                     placeholder={t("common.search")}
                                     className="app-input w-full bg-background py-1 pl-6 pr-2 text-[12px]"
                                     autoFocus
@@ -799,9 +816,7 @@ export function InstallSkills() {
                                 </div>
                               </div>
                               <div ref={sourceListRef} className="max-h-48 overflow-y-auto scrollbar-hide py-1">
-                                {sourceOptions.filter((s) =>
-                                  s.toLowerCase().includes(sourceSearch.toLowerCase())
-                                ).map((source, idx) => (
+                                {filteredOverflowSources.map((source, idx) => (
                                   <button
                                     key={source}
                                     type="button"
