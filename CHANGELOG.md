@@ -5,6 +5,27 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.10.0] - 2026-03-25
+
+### Added
+- Drag-and-drop skill reordering in project skill lists
+- Clickable skill cards on dashboard for quick navigation
+- Marketplace contributor quick filter
+- Expand/collapse all groups button in marketplace view
+- Auto-check skill updates on startup with notification badge
+- Toast notification navigation (click to jump to relevant page)
+- Text size setting for better readability
+- zh-TW locale support
+
+### Changed
+- Simplified marketplace layout by removing source grouping
+- Improved scan with plugin directory detection, rename support, and date display
+
+### Fixed
+- Missing dnd-kit dependencies causing build errors
+- React hook violations and lint warnings
+- Scenario deletion edge cases and sync error logging
+- Git duplicate warning on skill scan
 ## [1.9.0] - 2026-03-23
 
 ### Added
