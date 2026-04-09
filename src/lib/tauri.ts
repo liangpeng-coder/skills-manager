@@ -240,6 +240,12 @@ export const updateSkill = (skillId: string) =>
 export const reimportLocalSkill = (skillId: string) =>
   invoke<ManagedSkill>("reimport_local_skill", { skillId });
 
+export const relinkLocalSkillSource = (skillId: string, sourcePath: string) =>
+  invoke<ManagedSkill>("relink_local_skill_source", { skillId, sourcePath });
+
+export const detachLocalSkillSource = (skillId: string) =>
+  invoke<ManagedSkill>("detach_local_skill_source", { skillId });
+
 export interface BatchImportResult {
   imported: number;
   skipped: number;

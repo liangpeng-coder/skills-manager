@@ -54,8 +54,7 @@ export function SkillDetailPanel({
   const supportsSourceDiff =
     skill?.source_type === "git"
     || skill?.source_type === "skillssh"
-    || skill?.source_type === "local"
-    || skill?.source_type === "import";
+    || ((skill?.source_type === "local" || skill?.source_type === "import") && !!skill?.source_ref);
 
   useEffect(() => {
     if (!skillId) {

@@ -226,7 +226,9 @@ pub async fn get_source_skill_document(
         }
 
         if !matches!(skill.source_type.as_str(), "git" | "skillssh") {
-            return Err(AppError::invalid_input("Skill does not support source diff preview"));
+            return Err(AppError::invalid_input(
+                "Skill does not support source diff preview",
+            ));
         }
 
         let git_source = git_source_from_skill(&skill)?;
@@ -940,6 +942,119 @@ pub async fn reimport_local_skill(
     .await?
 }
 
+#[tauri::command]
+pub async fn relink_local_skill_source(
+    skill_id: String,
+    source_path: String,
+    store: State<'_, Arc<SkillStore>>,
+) -> Result<ManagedSkillDto, AppError> {
+    let store = store.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        let skill = store
+            .get_skill_by_id(&skill_id)
+            .map_err(AppError::db)?
+            .ok_or_else(|| AppError::not_found("Skill not found"))?;
+
+        if !matches!(skill.source_type.as_str(), "local" | "import") {
+            return Err(AppError::invalid_input(
+                "Only local skills can relink source paths",
+            ));
+        }
+
+        let path = PathBuf::from(&source_path);
+        if !path.exists() {
+            return Err(AppError::not_found("Selected source path does not exist"));
+        }
+        if !is_valid_skill_dir(&path) {
+            return Err(AppError::invalid_input(
+                "Selected source path is not a valid skill directory",
+            ));
+        }
+
+        store
+            .update_skill_update_status(&skill_id, "updating")
+            .map_err(AppError::db)?;
+
+        let result = (|| -> Result<(), AppError> {
+            let staged_path = staged_path_for(&skill.central_path);
+            let install_result = installer::install_from_local_to_destination(
+                &path,
+                Some(&skill.name),
+                &staged_path,
+            )
+            .map_err(AppError::io)?;
+            swap_skill_directory(&staged_path, Path::new(&skill.central_path))?;
+            store
+                .update_skill_after_reinstall(
+                    &skill.id,
+                    &skill.name,
+                    install_result.description.as_deref(),
+                    &skill.source_type,
+                    Some(&source_path),
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    Some(&install_result.content_hash),
+                    "local_only",
+                )
+                .map_err(AppError::db)?;
+            resync_copy_targets(&store, &skill.id)?;
+            Ok(())
+        })();
+
+        match result {
+            Ok(()) => managed_skill_by_id(&store, &skill_id),
+            Err(e) => {
+                let _ = store.update_skill_check_state(&skill_id, None, "error", Some(&e.message));
+                Err(e)
+            }
+        }
+    })
+    .await?
+}
+
+#[tauri::command]
+pub async fn detach_local_skill_source(
+    skill_id: String,
+    store: State<'_, Arc<SkillStore>>,
+) -> Result<ManagedSkillDto, AppError> {
+    let store = store.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        let skill = store
+            .get_skill_by_id(&skill_id)
+            .map_err(AppError::db)?
+            .ok_or_else(|| AppError::not_found("Skill not found"))?;
+
+        if !matches!(skill.source_type.as_str(), "local" | "import") {
+            return Err(AppError::invalid_input(
+                "Only local skills can detach source paths",
+            ));
+        }
+
+        store
+            .update_skill_after_reinstall(
+                &skill.id,
+                &skill.name,
+                skill.description.as_deref(),
+                &skill.source_type,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                skill.content_hash.as_deref(),
+                "local_only",
+            )
+            .map_err(AppError::db)?;
+
+        managed_skill_by_id(&store, &skill_id)
+    })
+    .await?
+}
+
 fn managed_skill_to_dto(
     store: &SkillStore,
     skill: SkillRecord,
@@ -1141,18 +1256,13 @@ fn check_skill_update_internal(
             }
         }
         "local" | "import" => {
-            let source_exists = skill
-                .source_ref
-                .as_ref()
-                .map(|path| Path::new(path).exists())
-                .unwrap_or(false);
-            let (status, error) = if source_exists {
-                ("local_only", None)
-            } else {
-                (
+            let (status, error) = match skill.source_ref.as_deref() {
+                Some(path) if Path::new(path).exists() => ("local_only", None),
+                Some(_) => (
                     "source_missing",
                     Some("Original source path no longer exists"),
-                )
+                ),
+                None => ("local_only", None),
             };
             store
                 .update_skill_check_state(&skill.id, None, status, error)

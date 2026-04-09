@@ -153,6 +153,10 @@
       "updated": "Skill 已更新",
       "reimport": "重新导入",
       "reimported": "Skill 已重新导入",
+      "relink": "重新关联",
+      "relinked": "已重新关联原路径",
+      "detachSource": "转为本地副本",
+      "detachedSource": "已取消原路径追踪",
       "alreadyUpToDate": "Skill 内容未变化（版本已同步）"
     },
     "gitConfigEntry": "同步配置",

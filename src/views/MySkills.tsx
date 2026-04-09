@@ -22,6 +22,7 @@ import {
   Square,
   GripVertical,
 } from "lucide-react";
+import { open as dialogOpen } from "@tauri-apps/plugin-dialog";
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
 import { cn } from "../utils";
@@ -562,6 +563,37 @@ export function MySkills() {
     }
   };
 
+  const handleRelinkSource = async (skill: ManagedSkill) => {
+    const selected = await dialogOpen({ directory: true, multiple: false });
+    if (!selected || Array.isArray(selected)) return;
+
+    setUpdatingSkillId(skill.id);
+    try {
+      await api.relinkLocalSkillSource(skill.id, selected);
+      toast.success(t("mySkills.updateActions.relinked"));
+      await refreshManagedSkills();
+    } catch (error: unknown) {
+      toast.error(getErrorMessage(error, t("common.error")));
+      await refreshManagedSkills();
+    } finally {
+      setUpdatingSkillId(null);
+    }
+  };
+
+  const handleDetachSource = async (skill: ManagedSkill) => {
+    setUpdatingSkillId(skill.id);
+    try {
+      await api.detachLocalSkillSource(skill.id);
+      toast.success(t("mySkills.updateActions.detachedSource"));
+      await refreshManagedSkills();
+    } catch (error: unknown) {
+      toast.error(getErrorMessage(error, t("common.error")));
+      await refreshManagedSkills();
+    } finally {
+      setUpdatingSkillId(null);
+    }
+  };
+
   const handleAddTag = async (skill: ManagedSkill, inputValue?: string) => {
     const trimmed = (inputValue ?? tagInput).trim();
     if (!trimmed || skill.tags.includes(trimmed)) {
@@ -735,8 +767,7 @@ export function MySkills() {
   const canRefresh = (skill: ManagedSkill) =>
     skill.source_type === "git" ||
     skill.source_type === "skillssh" ||
-    skill.source_type === "local" ||
-    skill.source_type === "import";
+    ((skill.source_type === "local" || skill.source_type === "import") && !!skill.source_ref);
 
   const sourceTypeLabel = (skill: ManagedSkill) =>
     skill.source_type === "skillssh" ? "skills.sh" : skill.source_type;
@@ -1083,6 +1114,9 @@ export function MySkills() {
               ? skill.scenario_ids.includes(activeScenario.id)
               : false;
             const badge = statusBadge(skill);
+            const isMissingLocalSource =
+              skill.update_status === "source_missing"
+              && (skill.source_type === "local" || skill.source_type === "import");
 
             if (viewMode === "grid") {
               return (
@@ -1159,6 +1193,24 @@ export function MySkills() {
                         >
                           {badge.label}
                         </span>
+                        {isMissingLocalSource && (
+                          <>
+                            <button
+                              onClick={() => handleRelinkSource(skill)}
+                              disabled={updatingSkillId === skill.id}
+                              className="rounded-full border border-border-subtle px-2 py-0.5 text-[12px] font-medium text-secondary transition-colors hover:bg-surface-hover disabled:opacity-50"
+                            >
+                              {t("mySkills.updateActions.relink")}
+                            </button>
+                            <button
+                              onClick={() => handleDetachSource(skill)}
+                              disabled={updatingSkillId === skill.id}
+                              className="rounded-full border border-border-subtle px-2 py-0.5 text-[12px] font-medium text-muted transition-colors hover:bg-surface-hover hover:text-secondary disabled:opacity-50"
+                            >
+                              {t("mySkills.updateActions.detachSource")}
+                            </button>
+                          </>
+                        )}
                       </div>
                     )}
                     <div className="mt-2 flex flex-wrap items-center gap-1">
@@ -1307,6 +1359,16 @@ export function MySkills() {
                 </div>
 
                 <div className="flex shrink-0 items-center gap-2.5">
+                  {badge && (
+                    <span
+                      className={cn(
+                        "rounded-full px-2 py-0.5 text-[12px] font-medium",
+                        badge.className
+                      )}
+                    >
+                      {badge.label}
+                    </span>
+                  )}
                   <span className="inline-flex items-center gap-1 text-[13px] text-muted">
                     {sourceIcon(skill.source_type)}
                     {sourceTypeLabel(skill)}
@@ -1319,6 +1381,24 @@ export function MySkills() {
                 </div>
 
                 <div className={cn("flex shrink-0 items-center gap-1 opacity-0 transition-opacity", !isMultiSelect && "group-hover:opacity-100")}>
+                  {isMissingLocalSource && (
+                    <>
+                      <button
+                        onClick={() => handleRelinkSource(skill)}
+                        disabled={updatingSkillId === skill.id}
+                        className="rounded px-2 py-0.5 text-[13px] font-medium text-secondary transition-colors hover:bg-surface-hover disabled:opacity-50"
+                      >
+                        {t("mySkills.updateActions.relink")}
+                      </button>
+                      <button
+                        onClick={() => handleDetachSource(skill)}
+                        disabled={updatingSkillId === skill.id}
+                        className="rounded px-2 py-0.5 text-[13px] font-medium text-muted transition-colors hover:bg-surface-hover hover:text-secondary disabled:opacity-50"
+                      >
+                        {t("mySkills.updateActions.detachSource")}
+                      </button>
+                    </>
+                  )}
                   <button
                     onClick={() => handleToggleScenario(skill)}
                     disabled={!activeScenario}

@@ -153,6 +153,10 @@
       "updated": "Skill updated",
       "reimport": "Reimport",
       "reimported": "Skill reimported",
+      "relink": "Relink",
+      "relinked": "Source path relinked",
+      "detachSource": "Keep local copy",
+      "detachedSource": "Source tracking removed",
       "alreadyUpToDate": "Skill content unchanged (version synced)"
     },
     "gitConfigEntry": "Sync Config",
