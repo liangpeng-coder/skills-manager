@@ -184,10 +184,9 @@ pub fn scan_local_skills_with_adapters(
             }
         }
 
-        // Plugin caches and marketplace directories can nest skills several levels deep.
-        // Always recurse there and only collect concrete skill directories.
+        // Additional scan dirs are already resolved to concrete skills roots.
         for scan_dir in adapter.additional_existing_scan_dirs() {
-            scan_recursive_dir(&adapter.key, &scan_dir, managed_paths, &mut discovered);
+            scan_flat_dir(&adapter.key, &scan_dir, managed_paths, &mut discovered);
         }
     }
 
@@ -359,12 +358,12 @@ mod tests {
     }
 
     #[test]
-    fn additional_scan_dirs_recurse_for_nested_skills() {
+    fn additional_scan_dirs_scan_concrete_skills_roots() {
         let tmp = tempdir().unwrap();
         let primary = tmp.path().join("skills");
-        let plugins = tmp.path().join("plugins");
+        let plugin_skills = tmp.path().join("plugins").join("vendor").join("skills");
         fs::create_dir_all(&primary).unwrap();
-        write_skill(&plugins.join("cache/vendor/packaged-skill"));
+        write_skill(&plugin_skills.join("packaged-skill"));
 
         let adapter = tool_adapters::ToolAdapter {
             key: "test".into(),
@@ -378,7 +377,7 @@ mod tests {
         };
 
         let adapter_with_extra = tool_adapters::ToolAdapter {
-            additional_scan_dirs: vec![plugins.to_string_lossy().to_string()],
+            additional_scan_dirs: vec![plugin_skills.to_string_lossy().to_string()],
             ..adapter
         };
 
@@ -386,9 +385,7 @@ mod tests {
         assert_eq!(plan.skills_found, 1);
         assert_eq!(
             plan.discovered[0].found_path,
-            plugins
-                .join("cache/vendor/packaged-skill")
-                .to_string_lossy()
+            plugin_skills.join("packaged-skill").to_string_lossy()
         );
     }
 

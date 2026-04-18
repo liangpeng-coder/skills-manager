@@ -130,10 +130,7 @@ pub fn default_tool_adapters() -> Vec<ToolAdapter> {
             display_name: "Claude Code".into(),
             relative_skills_dir: ".claude/skills".into(),
             relative_detect_dir: ".claude".into(),
-            additional_scan_dirs: vec![
-                ".claude/plugins/cache".into(),
-                ".claude/plugins/marketplaces".into(),
-            ],
+            additional_scan_dirs: vec![],
             override_skills_dir: None,
             is_custom: false,
             recursive_scan: false,
@@ -682,5 +679,15 @@ mod tests {
             .expect("antigravity adapter should exist");
 
         assert_eq!(adapter.relative_skills_dir, ".gemini/antigravity/skills");
+    }
+
+    #[test]
+    fn claude_code_does_not_scan_plugin_marketplaces_by_default() {
+        let adapter = default_tool_adapters()
+            .into_iter()
+            .find(|adapter| adapter.key == "claude_code")
+            .expect("claude_code adapter should exist");
+
+        assert!(adapter.additional_scan_dirs.is_empty());
     }
 }
