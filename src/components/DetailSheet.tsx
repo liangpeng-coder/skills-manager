@@ -2,6 +2,8 @@ import { createPortal } from "react-dom";
 import { X } from "lucide-react";
 import type { ReactNode } from "react";
 
+const IS_MACOS = navigator.userAgent.includes("Mac");
+
 interface DetailSheetProps {
   open: boolean;
   title: ReactNode;
@@ -23,7 +25,10 @@ export function DetailSheet({
 
   return createPortal(
     <div className="fixed top-[28px] right-0 bottom-0 left-[220px] z-40 flex">
-      <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={onClose} />
+      <div
+        className={IS_MACOS ? "absolute inset-0 bg-black/65" : "absolute inset-0 bg-black/60 backdrop-blur-sm"}
+        onClick={onClose}
+      />
       <div className="relative flex h-full min-h-0 w-full flex-col overflow-hidden border-l border-border-subtle bg-bg-secondary shadow-2xl animate-in slide-in-from-right duration-200">
         <button
           onClick={onClose}
