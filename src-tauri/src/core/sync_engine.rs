@@ -75,7 +75,14 @@ pub fn sync_skill(source: &Path, target: &Path, mode: SyncMode) -> Result<SyncMo
             {
                 match std::os::windows::fs::symlink_dir(source, target) {
                     Ok(()) => Ok(SyncMode::Symlink),
-                    Err(_) => {
+                    Err(err) => {
+                        // Typical causes: missing SeCreateSymbolicLinkPrivilege,
+                        // Developer Mode disabled, or non-NTFS target volume.
+                        log::warn!(
+                            "symlink_dir {:?} -> {:?} failed, falling back to copy: {err}",
+                            target,
+                            source
+                        );
                         copy_dir_recursive(source, target)?;
                         Ok(SyncMode::Copy)
                     }
