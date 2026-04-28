@@ -1551,7 +1551,7 @@ fn validate_clone_temp_path(temp_dir: &str) -> Result<PathBuf, AppError> {
             .file_name()
             .map(|n| n.to_string_lossy().to_string())
             .unwrap_or_default();
-        if dir_name_str.starts_with("skills-manager-clone-") {
+        if dir_name_str.starts_with(git_fetcher::CLONE_TEMP_PREFIX) {
             return Ok(temp_path);
         }
     }

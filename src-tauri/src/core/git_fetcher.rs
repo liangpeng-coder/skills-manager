@@ -14,6 +14,10 @@ use std::time::{Duration, Instant};
 
 const CLONE_TIMEOUT_SECS: u64 = 300;
 
+/// Filename prefix shared by isolated install checkouts under `std::env::temp_dir()`.
+/// Used by both `materialize_cached_repo` (writer) and `validate_clone_temp_path` (reader).
+pub const CLONE_TEMP_PREFIX: &str = "skills-manager-clone-";
+
 /// Callback type for reporting clone progress messages to the UI.
 pub type ProgressCallback = Box<dyn Fn(&str) + Send>;
 
@@ -98,7 +102,10 @@ struct RepoCacheLock {
     _file: File,
 }
 
-fn lock_repo_cache(cached_dir: &Path) -> Result<RepoCacheLock> {
+fn lock_repo_cache(
+    cached_dir: &Path,
+    on_progress: &Option<ProgressCallback>,
+) -> Result<RepoCacheLock> {
     if let Some(parent) = cached_dir.parent() {
         std::fs::create_dir_all(parent)?;
     }
@@ -110,29 +117,77 @@ fn lock_repo_cache(cached_dir: &Path) -> Result<RepoCacheLock> {
         .write(true)
         .open(&lock_path)
         .with_context(|| format!("Failed to open repo cache lock {}", lock_path.display()))?;
-    file.lock_exclusive()
-        .with_context(|| format!("Failed to lock repo cache {}", lock_path.display()))?;
+
+    // Try non-blocking first; if contended, surface a progress message before blocking.
+    if file.try_lock_exclusive().is_err() {
+        if let Some(cb) = on_progress {
+            cb("Waiting for another install of this repository to finish…");
+        }
+        file.lock_exclusive()
+            .with_context(|| format!("Failed to lock repo cache {}", lock_path.display()))?;
+    }
     Ok(RepoCacheLock { _file: file })
 }
 
-fn materialize_cached_repo(cached: &Path) -> Result<PathBuf> {
+fn materialize_cached_repo(
+    cached: &Path,
+    cancel: Option<&Arc<AtomicBool>>,
+) -> Result<PathBuf> {
     let temp_dir =
-        std::env::temp_dir().join(format!("skills-manager-clone-{}", uuid::Uuid::new_v4()));
+        std::env::temp_dir().join(format!("{CLONE_TEMP_PREFIX}{}", uuid::Uuid::new_v4()));
 
-    let status = git_command()
+    // `git clone --local` with default hardlinks: cache objects are content-addressed
+    // and immutable, the flock above prevents the cache from being mutated mid-clone,
+    // and any later cache deletion leaves linked objects intact in the temp checkout.
+    let child = git_command()
         .arg("clone")
         .arg("--local")
-        .arg("--no-hardlinks")
         .arg(cached)
         .arg(&temp_dir)
         .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .status();
+        .stderr(Stdio::piped())
+        .spawn();
 
-    match status {
-        Ok(s) if s.success() => return Ok(temp_dir),
-        _ => {
-            let _ = std::fs::remove_dir_all(&temp_dir);
+    let mut system_git_stderr: Option<String> = None;
+    if let Ok(mut child) = child {
+        let deadline = Instant::now() + Duration::from_secs(CLONE_TIMEOUT_SECS);
+        loop {
+            if cancel.is_some_and(|c| c.load(Ordering::SeqCst)) {
+                let _ = child.kill();
+                let _ = child.wait();
+                let _ = std::fs::remove_dir_all(&temp_dir);
+                anyhow::bail!("Installation cancelled");
+            }
+            match child.try_wait() {
+                Ok(Some(status)) => {
+                    if status.success() {
+                        return Ok(temp_dir);
+                    }
+                    let mut stderr_buf = String::new();
+                    if let Some(mut stderr) = child.stderr.take() {
+                        let _ = stderr.read_to_string(&mut stderr_buf);
+                    }
+                    let _ = std::fs::remove_dir_all(&temp_dir);
+                    system_git_stderr = Some(stderr_buf);
+                    break;
+                }
+                Ok(None) => {
+                    if Instant::now() > deadline {
+                        let _ = child.kill();
+                        let _ = child.wait();
+                        let _ = std::fs::remove_dir_all(&temp_dir);
+                        anyhow::bail!(
+                            "Local clone from cache timed out after {}s",
+                            CLONE_TIMEOUT_SECS
+                        );
+                    }
+                    std::thread::sleep(Duration::from_millis(100));
+                }
+                Err(_) => {
+                    let _ = std::fs::remove_dir_all(&temp_dir);
+                    break;
+                }
+            }
         }
     }
 
@@ -143,7 +198,15 @@ fn materialize_cached_repo(cached: &Path) -> Result<PathBuf> {
         Ok(_) => Ok(temp_dir),
         Err(err) => {
             let _ = std::fs::remove_dir_all(&temp_dir);
-            anyhow::bail!("Failed to create install checkout from cache: {}", err)
+            let detail = system_git_stderr
+                .filter(|s| !s.trim().is_empty())
+                .map(|s| format!(" (system git: {})", s.trim()))
+                .unwrap_or_default();
+            anyhow::bail!(
+                "Failed to create install checkout from cache: {}{}",
+                err,
+                detail
+            )
         }
     }
 }
@@ -206,6 +269,7 @@ fn try_update_cached_repo(
         loop {
             if cancel.is_some_and(|c| c.load(Ordering::SeqCst)) {
                 let _ = child.kill();
+                let _ = child.wait();
                 anyhow::bail!("Installation cancelled");
             }
             match child.try_wait() {
@@ -220,6 +284,7 @@ fn try_update_cached_repo(
                 Ok(None) => {
                     if Instant::now() > deadline {
                         let _ = child.kill();
+                        let _ = child.wait();
                         let _ = std::fs::remove_dir_all(cached);
                         return Ok(false);
                     }
@@ -341,12 +406,12 @@ pub fn clone_repo_ref_with_progress(
     on_progress: Option<ProgressCallback>,
 ) -> Result<PathBuf> {
     let cached_dir = repo_cache_dir(url);
-    let _cache_lock = lock_repo_cache(&cached_dir)?;
+    let _cache_lock = lock_repo_cache(&cached_dir, &on_progress)?;
 
     // Try cached repo first.
     if cached_dir.exists() {
         match try_update_cached_repo(&cached_dir, url, branch, proxy_url, cancel, &on_progress) {
-            Ok(true) => return materialize_cached_repo(&cached_dir),
+            Ok(true) => return materialize_cached_repo(&cached_dir, cancel),
             Ok(false) => { /* cache invalid, fall through to clone */ }
             Err(e) => {
                 // Propagate cancellation.
@@ -390,6 +455,7 @@ pub fn clone_repo_ref_with_progress(
         loop {
             if cancel.is_some_and(|c| c.load(Ordering::SeqCst)) {
                 let _ = child.kill();
+                let _ = child.wait();
                 let _ = std::fs::remove_dir_all(&cached_dir);
                 anyhow::bail!("Installation cancelled");
             }
@@ -407,7 +473,7 @@ pub fn clone_repo_ref_with_progress(
                 Ok(Some(status)) => {
                     let collected = stderr_thread.join().unwrap_or_default();
                     if status.success() {
-                        return materialize_cached_repo(&cached_dir);
+                        return materialize_cached_repo(&cached_dir, cancel);
                     }
                     system_git_stderr = Some(collected);
                     // Clean up failed clone.
@@ -417,6 +483,7 @@ pub fn clone_repo_ref_with_progress(
                 Ok(None) => {
                     if Instant::now() > deadline {
                         let _ = child.kill();
+                        let _ = child.wait();
                         let _ = std::fs::remove_dir_all(&cached_dir);
                         anyhow::bail!(
                             "Git clone timed out after {}s — check your network connection",
@@ -485,7 +552,7 @@ pub fn clone_repo_ref_with_progress(
     builder.fetch_options(fetch_opts);
 
     match builder.clone(url, &cached_dir) {
-        Ok(_) => materialize_cached_repo(&cached_dir),
+        Ok(_) => materialize_cached_repo(&cached_dir, cancel),
         Err(git2_err) => {
             let _ = std::fs::remove_dir_all(&cached_dir);
             // Include system git stderr in the error if available.
